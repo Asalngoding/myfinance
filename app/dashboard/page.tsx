@@ -428,12 +428,12 @@ export default async function DashboardPage() {
             </button>
 
             {/* TABUNGAN */}
-            <button
-              type="button"
-              className="rounded-2xl bg-white p-4 font-semibold text-slate-900 shadow-sm"
+            <Link
+              href="/savings"
+              className="flex items-center justify-center rounded-2xl bg-white p-4 font-semibold text-slate-900 shadow-sm"
             >
               Tabungan
-            </button>
+            </Link>
 
             {/* UANG PINJAM */}
             <button
