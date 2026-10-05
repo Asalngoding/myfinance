@@ -1,228 +1,365 @@
-import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
-import { getDashboard } from "@/lib/dashboard";
-import { rupiah } from "@/lib/format";
+"use client";
 
-export default async function DashboardPage() {
-  const supabase = await createClient();
+import { FormEvent, useState } from "react";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
+const categories = {
+  INCOME: [
+    {
+      value: "GAJI",
+      label: "Gaji"
+    },
+    {
+      value: "TRANSFER_ORANG",
+      label: "Transfer Orang"
+    }
+  ],
 
-  if (!user) {
-    redirect("/login");
+  EXPENSE: [
+    {
+      value: "BAYAR_UTANG",
+      label: "Bayar Utang"
+    },
+    {
+      value: "BENSIN",
+      label: "Bensin"
+    },
+    {
+      value: "MAKAN_JAJAN",
+      label: "Makan & Jajan"
+    },
+    {
+      value: "SELF_REWARD",
+      label: "Self Reward"
+    },
+    {
+      value: "LIBURAN",
+      label: "Liburan"
+    },
+    {
+      value: "SERVIS_MOTOR",
+      label: "Servis Motor"
+    },
+    {
+      value: "LAINNYA",
+      label: "Lainnya"
+    }
+  ],
+
+  TRANSFER: [
+    {
+      value: "TABUNGAN_MASUK",
+      label: "Masuk ke Tabungan"
+    },
+    {
+      value: "TABUNGAN_KELUAR",
+      label: "Ambil dari Tabungan"
+    }
+  ],
+
+  LOAN: [
+    {
+      value: "PINJAMKAN_UANG",
+      label: "Pinjamkan Uang"
+    },
+    {
+      value: "PENGEMBALIAN_PINJAMAN",
+      label: "Pengembalian Pinjaman"
+    }
+  ]
+};
+
+type TransactionType =
+  | "INCOME"
+  | "EXPENSE"
+  | "TRANSFER"
+  | "LOAN";
+
+export default function NewTransactionPage() {
+  const router = useRouter();
+  const supabase = createClient();
+
+  const [type, setType] =
+    useState<TransactionType>("INCOME");
+
+  const [category, setCategory] =
+    useState("GAJI");
+
+  const [amount, setAmount] =
+    useState("");
+
+  const [date, setDate] =
+    useState(
+      new Date().toISOString().slice(0, 10)
+    );
+
+  const [description, setDescription] =
+    useState("");
+
+  const [loading, setLoading] =
+    useState(false);
+
+  const [error, setError] =
+    useState("");
+
+  const selectedCategories =
+    categories[type];
+
+  function changeType(
+    newType: TransactionType
+  ) {
+    setType(newType);
+
+    setCategory(
+      categories[newType][0].value
+    );
   }
 
-  const now = new Date();
+  async function submit(
+    e: FormEvent
+  ) {
+    e.preventDefault();
 
-  const month = `${now.getFullYear()}-${String(
-    now.getMonth() + 1
-  ).padStart(2, "0")}`;
+    setError("");
 
-  const data = await getDashboard(month);
+    const numericAmount =
+      Number(
+        amount.replace(/\D/g, "")
+      );
+
+    if (!numericAmount || numericAmount <= 0) {
+      setError(
+        "Nominal harus lebih dari 0."
+      );
+
+      return;
+    }
+
+    setLoading(true);
+
+    const {
+      data: {
+        user
+      }
+    } =
+      await supabase.auth.getUser();
+
+    if (!user) {
+      router.push("/login");
+      return;
+    }
+
+    const {
+      error: insertError
+    } =
+      await supabase
+        .from("transactions")
+        .insert({
+          user_id: user.id,
+          transaction_type: type,
+          category,
+          amount: numericAmount,
+          transaction_date: date,
+          description:
+            description.trim() || null
+        });
+
+    if (insertError) {
+      setError(
+        "Transaksi gagal disimpan: " +
+          insertError.message
+      );
+
+      setLoading(false);
+      return;
+    }
+
+    router.push("/dashboard");
+    router.refresh();
+  }
 
   return (
     <main className="min-h-screen bg-slate-50">
-      <div className="mx-auto min-h-screen w-full max-w-md bg-slate-50 pb-8">
-        {/* HEADER */}
-        <header className="bg-slate-900 px-5 pb-6 pt-8 text-white">
-          <p className="text-sm text-slate-300">
-            Selamat datang,
-          </p>
+      <div className="mx-auto min-h-screen w-full max-w-md bg-slate-50">
 
-          <h1 className="mt-1 text-2xl font-bold">
-            MyFinance
+        {/* HEADER */}
+        <header className="bg-slate-900 px-5 pb-5 pt-6 text-white">
+          <button
+            type="button"
+            onClick={() =>
+              router.push("/dashboard")
+            }
+            className="text-sm text-slate-300"
+          >
+            ← Kembali
+          </button>
+
+          <h1 className="mt-4 text-2xl font-bold">
+            Tambah Transaksi
           </h1>
 
-          <div className="mt-6">
-            <p className="text-sm text-slate-300">
-              Total Aset
-            </p>
-
-            <p className="mt-1 text-3xl font-bold">
-              {rupiah(data.assets)}
-            </p>
-          </div>
+          <p className="mt-1 text-sm text-slate-300">
+            Catat pemasukan, pengeluaran,
+            tabungan, atau uang pinjam.
+          </p>
         </header>
 
-        {/* CONTENT */}
-        <section className="space-y-4 px-4 py-5">
+        {/* FORM */}
+        <form
+          onSubmit={submit}
+          className="space-y-5 px-4 py-5"
+        >
 
-          {/* SALDO */}
-          <div className="rounded-2xl bg-white p-5 shadow-sm">
-            <p className="text-sm text-slate-500">
-              Saldo Tersedia
-            </p>
+          {/* TYPE */}
+          <div>
+            <label className="mb-2 block text-sm font-semibold">
+              Jenis Transaksi
+            </label>
 
-            <p className="mt-1 text-2xl font-bold text-slate-900">
-              {rupiah(data.available)}
-            </p>
-          </div>
-
-          {/* INCOME / EXPENSE */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-2xl bg-white p-4 shadow-sm">
-              <p className="text-sm text-slate-500">
-                Uang Masuk
-              </p>
-
-              <p className="mt-2 text-lg font-bold text-green-600">
-                {rupiah(data.income)}
-              </p>
-            </div>
-
-            <div className="rounded-2xl bg-white p-4 shadow-sm">
-              <p className="text-sm text-slate-500">
-                Uang Keluar
-              </p>
-
-              <p className="mt-2 text-lg font-bold text-red-600">
-                {rupiah(data.expense)}
-              </p>
-            </div>
-          </div>
-
-          {/* NET CASH FLOW */}
-          <div className="rounded-2xl bg-white p-5 shadow-sm">
-            <p className="text-sm text-slate-500">
-              Net Cash Flow
-            </p>
-
-            <p
-              className={`mt-1 text-2xl font-bold ${
-                data.netCashFlow >= 0
-                  ? "text-green-600"
-                  : "text-red-600"
-              }`}
-            >
-              {rupiah(data.netCashFlow)}
-            </p>
-          </div>
-
-          {/* ASSET SUMMARY */}
-          <div className="rounded-2xl bg-white p-5 shadow-sm">
-            <h2 className="font-semibold text-slate-900">
-              Ringkasan Aset
-            </h2>
-
-            <div className="mt-4 space-y-3 text-sm">
-              <div className="flex justify-between">
-                <span className="text-slate-500">
-                  Saldo tersedia
-                </span>
-
-                <span className="font-medium">
-                  {rupiah(data.available)}
-                </span>
-              </div>
-
-              <div className="flex justify-between">
-                <span className="text-slate-500">
-                  Tabungan
-                </span>
-
-                <span className="font-medium">
-                  {rupiah(data.savingsTotal)}
-                </span>
-              </div>
-
-              <div className="flex justify-between">
-                <span className="text-slate-500">
-                  Uang dipinjam orang
-                </span>
-
-                <span className="font-medium">
-                  {rupiah(data.loanOutstanding)}
-                </span>
-              </div>
-
-              <div className="border-t pt-3">
-                <div className="flex justify-between">
-                  <span className="font-semibold">
-                    Total aset
-                  </span>
-
-                  <span className="font-bold">
-                    {rupiah(data.assets)}
-                  </span>
-                </div>
-              </div>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                {
+                  value: "INCOME",
+                  label: "Uang Masuk"
+                },
+                {
+                  value: "EXPENSE",
+                  label: "Uang Keluar"
+                },
+                {
+                  value: "TRANSFER",
+                  label: "Tabungan"
+                },
+                {
+                  value: "LOAN",
+                  label: "Uang Pinjam"
+                }
+              ].map((item) => (
+                <button
+                  key={item.value}
+                  type="button"
+                  onClick={() =>
+                    changeType(
+                      item.value as TransactionType
+                    )
+                  }
+                  className={`rounded-xl px-3 py-3 text-sm font-semibold ${
+                    type === item.value
+                      ? "bg-slate-900 text-white"
+                      : "bg-white text-slate-700 shadow-sm"
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
             </div>
           </div>
 
-          {/* DEBT */}
-          <div className="rounded-2xl bg-white p-5 shadow-sm">
-            <p className="text-sm text-slate-500">
-              Utang Belum Dibayar
-            </p>
+          {/* CATEGORY */}
+          <div>
+            <label className="mb-2 block text-sm font-semibold">
+              Kategori
+            </label>
 
-            <p className="mt-1 text-2xl font-bold text-orange-500">
-              {rupiah(data.debtOutstanding)}
-            </p>
+            <select
+              value={category}
+              onChange={(e) =>
+                setCategory(e.target.value)
+              }
+              className="w-full rounded-xl border-0 bg-white px-4 py-3 shadow-sm"
+            >
+              {selectedCategories.map(
+                (item) => (
+                  <option
+                    key={item.value}
+                    value={item.value}
+                  >
+                    {item.label}
+                  </option>
+                )
+              )}
+            </select>
           </div>
 
-          {/* EXPENSE RATIO */}
-          <div className="rounded-2xl bg-white p-5 shadow-sm">
-            <div className="flex items-center justify-between">
-              <p className="text-sm text-slate-500">
-                Rasio Pengeluaran
-              </p>
+          {/* AMOUNT */}
+          <div>
+            <label className="mb-2 block text-sm font-semibold">
+              Nominal
+            </label>
 
-              <p className="font-bold text-slate-900">
-                {data.expenseRatio.toFixed(1)}%
-              </p>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={amount}
+              onChange={(e) =>
+                setAmount(
+                  e.target.value.replace(
+                    /\D/g,
+                    ""
+                  )
+                )
+              }
+              placeholder="Contoh: 50000"
+              className="w-full rounded-xl border-0 bg-white px-4 py-3 shadow-sm"
+              required
+            />
+          </div>
+
+          {/* DATE */}
+          <div>
+            <label className="mb-2 block text-sm font-semibold">
+              Tanggal
+            </label>
+
+            <input
+              type="date"
+              value={date}
+              onChange={(e) =>
+                setDate(e.target.value)
+              }
+              className="w-full rounded-xl border-0 bg-white px-4 py-3 shadow-sm"
+              required
+            />
+          </div>
+
+          {/* DESCRIPTION */}
+          <div>
+            <label className="mb-2 block text-sm font-semibold">
+              Keterangan
+            </label>
+
+            <textarea
+              value={description}
+              onChange={(e) =>
+                setDescription(
+                  e.target.value
+                )
+              }
+              placeholder="Contoh: Gaji bulan Oktober"
+              rows={3}
+              className="w-full resize-none rounded-xl border-0 bg-white px-4 py-3 shadow-sm"
+            />
+          </div>
+
+          {/* ERROR */}
+          {error && (
+            <div className="rounded-xl bg-red-50 p-3 text-sm text-red-600">
+              {error}
             </div>
+          )}
 
-            <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100">
-              <div
-                className="h-full rounded-full bg-slate-900"
-                style={{
-                  width: `${Math.min(
-                    data.expenseRatio,
-                    100
-                  )}%`
-                }}
-              />
-            </div>
-          </div>
-
-          {/* MENU */}
-          <div className="grid grid-cols-2 gap-3 pt-2">
-            <button
-              type="button"
-              onClick={() => {
-                window.location.href =
-                  "/transactions/new";
-              }}
-              className="rounded-2xl bg-slate-900 p-4 font-semibold text-white"
-            >
-              + Transaksi
-            </button>
-
-            <button
-              type="button"
-              className="rounded-2xl bg-white p-4 font-semibold text-slate-900 shadow-sm"
-            >
-              Summary
-            </button>
-
-            <button
-              type="button"
-              className="rounded-2xl bg-white p-4 font-semibold text-slate-900 shadow-sm"
-            >
-              Tabungan
-            </button>
-
-            <button
-              type="button"
-              className="rounded-2xl bg-white p-4 font-semibold text-slate-900 shadow-sm"
-            >
-              Uang Pinjam
-            </button>
-          </div>
-
-        </section>
+          {/* SUBMIT */}
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full rounded-xl bg-slate-900 px-4 py-3 font-semibold text-white disabled:opacity-50"
+          >
+            {loading
+              ? "Menyimpan..."
+              : "Simpan Transaksi"}
+          </button>
+        </form>
       </div>
     </main>
   );
