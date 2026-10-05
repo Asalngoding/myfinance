@@ -76,6 +76,27 @@ type TransactionType =
   | "TRANSFER"
   | "LOAN";
 
+function getLocalDateTime() {
+  const now = new Date();
+
+  const year = now.getFullYear();
+  const month = String(
+    now.getMonth() + 1
+  ).padStart(2, "0");
+  const day = String(
+    now.getDate()
+  ).padStart(2, "0");
+
+  const hours = String(
+    now.getHours()
+  ).padStart(2, "0");
+  const minutes = String(
+    now.getMinutes()
+  ).padStart(2, "0");
+
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
 export default function NewTransactionPage() {
   const router = useRouter();
   const supabase = createClient();
@@ -89,10 +110,8 @@ export default function NewTransactionPage() {
   const [amount, setAmount] =
     useState("");
 
-  const [date, setDate] =
-    useState(
-      new Date().toISOString().slice(0, 10)
-    );
+  const [dateTime, setDateTime] =
+    useState(getLocalDateTime());
 
   const [description, setDescription] =
     useState("");
@@ -136,6 +155,14 @@ export default function NewTransactionPage() {
       return;
     }
 
+    if (!dateTime) {
+      setError(
+        "Tanggal dan jam wajib diisi."
+      );
+
+      return;
+    }
+
     setLoading(true);
 
     const {
@@ -150,6 +177,21 @@ export default function NewTransactionPage() {
       return;
     }
 
+    /*
+     * Input datetime-local menghasilkan:
+     *
+     * 2026-10-05T04:15
+     *
+     * Kita ubah menjadi format ISO
+     * dengan timezone lokal browser.
+     */
+
+    const localDate =
+      new Date(dateTime);
+
+    const transactionDate =
+      localDate.toISOString();
+
     const {
       error: insertError
     } =
@@ -160,7 +202,8 @@ export default function NewTransactionPage() {
           transaction_type: type,
           category,
           amount: numericAmount,
-          transaction_date: date,
+          transaction_date:
+            transactionDate,
           description:
             description.trim() || null
         });
@@ -306,21 +349,25 @@ export default function NewTransactionPage() {
             />
           </div>
 
-          {/* DATE */}
+          {/* DATE & TIME */}
           <div>
             <label className="mb-2 block text-sm font-semibold">
-              Tanggal
+              Tanggal & Jam
             </label>
 
             <input
-              type="date"
-              value={date}
+              type="datetime-local"
+              value={dateTime}
               onChange={(e) =>
-                setDate(e.target.value)
+                setDateTime(e.target.value)
               }
               className="w-full rounded-xl border-0 bg-white px-4 py-3 shadow-sm"
               required
             />
+
+            <p className="mt-2 text-xs text-slate-500">
+              Waktu mengikuti waktu lokal perangkat.
+            </p>
           </div>
 
           {/* DESCRIPTION */}
