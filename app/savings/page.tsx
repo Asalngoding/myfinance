@@ -13,6 +13,8 @@ type Savings = {
   description: string | null;
 };
 
+type ModalType = "deposit" | "withdraw" | null;
+
 function rupiah(value: number) {
   return new Intl.NumberFormat("id-ID", {
     style: "currency",
@@ -21,20 +23,69 @@ function rupiah(value: number) {
   }).format(value);
 }
 
+function getLocalDateTime() {
+  const now = new Date();
+
+  const year = now.getFullYear();
+
+  const month = String(
+    now.getMonth() + 1
+  ).padStart(2, "0");
+
+  const day = String(
+    now.getDate()
+  ).padStart(2, "0");
+
+  const hours = String(
+    now.getHours()
+  ).padStart(2, "0");
+
+  const minutes = String(
+    now.getMinutes()
+  ).padStart(2, "0");
+
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
 export default function SavingsPage() {
   const router = useRouter();
   const supabase = createClient();
 
-  const [savings, setSavings] = useState<Savings[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [savings, setSavings] =
+    useState<Savings[]>([]);
 
-  const [name, setName] = useState("");
-  const [targetAmount, setTargetAmount] = useState("");
-  const [targetDate, setTargetDate] = useState("");
-  const [description, setDescription] = useState("");
+  const [loading, setLoading] =
+    useState(true);
 
-  const [error, setError] = useState("");
+  const [saving, setSaving] =
+    useState(false);
+
+  const [name, setName] =
+    useState("");
+
+  const [targetAmount, setTargetAmount] =
+    useState("");
+
+  const [targetDate, setTargetDate] =
+    useState("");
+
+  const [description, setDescription] =
+    useState("");
+
+  const [error, setError] =
+    useState("");
+
+  const [modalType, setModalType] =
+    useState<ModalType>(null);
+
+  const [selectedSavings, setSelectedSavings] =
+    useState<Savings | null>(null);
+
+  const [transactionAmount, setTransactionAmount] =
+    useState("");
+
+  const [transactionDescription, setTransactionDescription] =
+    useState("");
 
   async function loadSavings() {
     setLoading(true);
@@ -49,14 +100,16 @@ export default function SavingsPage() {
       return;
     }
 
-    const { data, error: fetchError } =
-      await supabase
-        .from("savings")
-        .select("*")
-        .eq("user_id", user.id)
-        .order("created_at", {
-          ascending: false
-        });
+    const {
+      data,
+      error: fetchError
+    } = await supabase
+      .from("savings")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("created_at", {
+        ascending: false
+      });
 
     if (fetchError) {
       setError(
@@ -116,19 +169,20 @@ export default function SavingsPage() {
       return;
     }
 
-    const { error: insertError } =
-      await supabase
-        .from("savings")
-        .insert({
-          user_id: user.id,
-          name: name.trim(),
-          target_amount: numericTarget,
-          current_amount: 0,
-          target_date:
-            targetDate || null,
-          description:
-            description.trim() || null
-        });
+    const {
+      error: insertError
+    } = await supabase
+      .from("savings")
+      .insert({
+        user_id: user.id,
+        name: name.trim(),
+        target_amount: numericTarget,
+        current_amount: 0,
+        target_date:
+          targetDate || null,
+        description:
+          description.trim() || null
+      });
 
     if (insertError) {
       setError(
@@ -146,6 +200,185 @@ export default function SavingsPage() {
     setDescription("");
 
     await loadSavings();
+
+    setSaving(false);
+  }
+
+  function openTransactionModal(
+    type: ModalType,
+    item: Savings
+  ) {
+    setError("");
+    setSelectedSavings(item);
+    setModalType(type);
+    setTransactionAmount("");
+    setTransactionDescription("");
+  }
+
+  function closeTransactionModal() {
+    if (saving) {
+      return;
+    }
+
+    setModalType(null);
+    setSelectedSavings(null);
+    setTransactionAmount("");
+    setTransactionDescription("");
+  }
+
+  async function submitSavingsTransaction(
+    e: FormEvent
+  ) {
+    e.preventDefault();
+
+    if (
+      !selectedSavings ||
+      !modalType
+    ) {
+      return;
+    }
+
+    setError("");
+
+    const numericAmount =
+      Number(
+        transactionAmount.replace(
+          /\D/g,
+          ""
+        )
+      );
+
+    if (
+      !numericAmount ||
+      numericAmount <= 0
+    ) {
+      setError(
+        "Nominal harus lebih dari 0."
+      );
+      return;
+    }
+
+    if (
+      modalType === "withdraw" &&
+      numericAmount >
+        Number(
+          selectedSavings.current_amount
+        )
+    ) {
+      setError(
+        "Nominal pengambilan melebihi saldo tabungan."
+      );
+      return;
+    }
+
+    setSaving(true);
+
+    const {
+      data: { user }
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      router.push("/login");
+      return;
+    }
+
+    const newAmount =
+      modalType === "deposit"
+        ? Number(
+            selectedSavings.current_amount
+          ) + numericAmount
+        : Number(
+            selectedSavings.current_amount
+          ) - numericAmount;
+
+    /*
+     * 1. Update saldo tabungan
+     */
+    const {
+      error: updateError
+    } = await supabase
+      .from("savings")
+      .update({
+        current_amount: newAmount
+      })
+      .eq("id", selectedSavings.id)
+      .eq("user_id", user.id);
+
+    if (updateError) {
+      setError(
+        "Saldo tabungan gagal diperbarui: " +
+          updateError.message
+      );
+
+      setSaving(false);
+      return;
+    }
+
+    /*
+     * 2. Catat transaksi
+     *
+     * Setor:
+     * TABUNGAN_MASUK
+     *
+     * Ambil:
+     * TABUNGAN_KELUAR
+     */
+    const category =
+      modalType === "deposit"
+        ? "TABUNGAN_MASUK"
+        : "TABUNGAN_KELUAR";
+
+    const {
+      error: transactionError
+    } = await supabase
+      .from("transactions")
+      .insert({
+        user_id: user.id,
+        transaction_type: "TRANSFER",
+        category,
+        amount: numericAmount,
+        transaction_date:
+          new Date().toISOString(),
+        description:
+          transactionDescription.trim() ||
+          (
+            modalType === "deposit"
+              ? `Setor ke ${selectedSavings.name}`
+              : `Ambil dari ${selectedSavings.name}`
+          ),
+        savings_id:
+          selectedSavings.id
+      });
+
+    if (transactionError) {
+      /*
+       * Jika pencatatan transaksi gagal,
+       * kembalikan saldo tabungan ke kondisi
+       * sebelumnya.
+       */
+      await supabase
+        .from("savings")
+        .update({
+          current_amount:
+            selectedSavings.current_amount
+        })
+        .eq("id", selectedSavings.id)
+        .eq("user_id", user.id);
+
+      setError(
+        "Transaksi gagal disimpan: " +
+          transactionError.message
+      );
+
+      setSaving(false);
+      return;
+    }
+
+    closeTransactionModal();
+
+    await loadSavings();
+
+    router.refresh();
 
     setSaving(false);
   }
@@ -292,7 +525,7 @@ export default function SavingsPage() {
               </div>
 
               {/* ERROR */}
-              {error && (
+              {error && !modalType && (
                 <div className="rounded-xl bg-red-50 p-3 text-sm text-red-600">
                   {error}
                 </div>
@@ -343,6 +576,7 @@ export default function SavingsPage() {
                 </div>
               ) : savings.length === 0 ? (
                 <div className="rounded-xl bg-slate-50 p-4 text-center">
+
                   <p className="text-sm text-slate-500">
                     Belum ada tabungan.
                   </p>
@@ -351,6 +585,7 @@ export default function SavingsPage() {
                     Buat target tabungan pertamamu
                     di atas.
                   </p>
+
                 </div>
               ) : (
                 savings.map((item) => {
@@ -454,6 +689,37 @@ export default function SavingsPage() {
                         </p>
                       )}
 
+                      {/* ACTION */}
+                      <div className="mt-4 grid grid-cols-2 gap-2">
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            openTransactionModal(
+                              "deposit",
+                              item
+                            )
+                          }
+                          className="rounded-xl bg-slate-900 px-3 py-3 text-sm font-semibold text-white"
+                        >
+                          + Setor
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            openTransactionModal(
+                              "withdraw",
+                              item
+                            )
+                          }
+                          className="rounded-xl bg-white px-3 py-3 text-sm font-semibold text-slate-700 shadow-sm"
+                        >
+                          − Ambil
+                        </button>
+
+                      </div>
+
                     </div>
                   );
                 })
@@ -463,6 +729,145 @@ export default function SavingsPage() {
           </div>
 
         </section>
+
+        {/* MODAL SETOR / AMBIL */}
+        {modalType && selectedSavings && (
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4">
+
+            <div className="w-full max-w-md rounded-t-3xl bg-white p-5 sm:rounded-3xl">
+
+              {/* MODAL HEADER */}
+              <div className="flex items-start justify-between">
+
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                    {modalType === "deposit"
+                      ? "Setor Tabungan"
+                      : "Ambil Tabungan"}
+                  </p>
+
+                  <h2 className="mt-1 text-xl font-bold text-slate-900">
+                    {selectedSavings.name}
+                  </h2>
+
+                  <p className="mt-1 text-sm text-slate-500">
+                    Saldo saat ini:{" "}
+                    <span className="font-semibold text-slate-700">
+                      {rupiah(
+                        Number(
+                          selectedSavings.current_amount
+                        )
+                      )}
+                    </span>
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={
+                    closeTransactionModal
+                  }
+                  disabled={saving}
+                  className="rounded-full bg-slate-100 px-3 py-2 text-slate-600"
+                >
+                  ✕
+                </button>
+
+              </div>
+
+              {/* FORM MODAL */}
+              <form
+                onSubmit={
+                  submitSavingsTransaction
+                }
+                className="mt-5 space-y-4"
+              >
+
+                {/* NOMINAL */}
+                <div>
+                  <label className="mb-2 block text-sm font-semibold">
+                    Nominal
+                  </label>
+
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={
+                      transactionAmount
+                    }
+                    onChange={(e) =>
+                      setTransactionAmount(
+                        e.target.value.replace(
+                          /\D/g,
+                          ""
+                        )
+                      )
+                    }
+                    placeholder="Contoh: 500000"
+                    className="w-full rounded-xl border-0 bg-slate-50 px-4 py-3 shadow-sm"
+                    required
+                  />
+                </div>
+
+                {/* KETERANGAN */}
+                <div>
+                  <label className="mb-2 block text-sm font-semibold">
+                    Keterangan
+                  </label>
+
+                  <textarea
+                    value={
+                      transactionDescription
+                    }
+                    onChange={(e) =>
+                      setTransactionDescription(
+                        e.target.value
+                      )
+                    }
+                    placeholder={
+                      modalType === "deposit"
+                        ? "Contoh: Setoran tabungan bulan Oktober"
+                        : "Contoh: Ambil untuk kebutuhan tertentu"
+                    }
+                    rows={3}
+                    className="w-full resize-none rounded-xl border-0 bg-slate-50 px-4 py-3 shadow-sm"
+                  />
+                </div>
+
+                {/* INFO */}
+                <div className="rounded-xl bg-slate-50 p-3 text-xs leading-5 text-slate-500">
+                  {modalType === "deposit"
+                    ? "Setoran akan mengurangi saldo tersedia, tetapi tidak dihitung sebagai pengeluaran."
+                    : "Pengambilan akan menambah saldo tersedia, tetapi tidak dihitung sebagai pemasukan."}
+                </div>
+
+                {/* ERROR */}
+                {error && (
+                  <div className="rounded-xl bg-red-50 p-3 text-sm text-red-600">
+                    {error}
+                  </div>
+                )}
+
+                {/* BUTTON */}
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="w-full rounded-xl bg-slate-900 px-4 py-3 font-semibold text-white disabled:opacity-50"
+                >
+                  {saving
+                    ? "Menyimpan..."
+                    : modalType ===
+                      "deposit"
+                    ? "Simpan Setoran"
+                    : "Simpan Pengambilan"}
+                </button>
+
+              </form>
+
+            </div>
+          </div>
+        )}
+
       </div>
     </main>
   );
