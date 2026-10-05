@@ -5,7 +5,7 @@ export async function getDashboard(month: string) {
 
   /*
    * =========================================================
-   * 1. RANGE BULAN YANG DIPILIH
+   * 1. RANGE BULAN
    * =========================================================
    */
 
@@ -80,7 +80,7 @@ export async function getDashboard(month: string) {
 
   /*
    * =========================================================
-   * 5. UANG PINJAM
+   * 5. UANG DIPINJAMKAN KE ORANG
    * =========================================================
    */
 
@@ -100,7 +100,7 @@ export async function getDashboard(month: string) {
 
   /*
    * =========================================================
-   * 6. UTANG
+   * 6. UTANG KITA
    * =========================================================
    */
 
@@ -120,16 +120,36 @@ export async function getDashboard(month: string) {
 
   /*
    * =========================================================
-   * 7. PEMASUKAN BULAN INI
+   * 7. UANG MASUK
+   *
+   * Termasuk:
+   * - Gaji
+   * - Transfer Orang
+   * - Pinjam dari Orang
+   * - Pengembalian Pinjaman
    * =========================================================
    */
 
   const income = (transactions ?? [])
-    .filter(
-      (transaction) =>
+    .filter((transaction) => {
+      if (
         transaction.transaction_type ===
         "INCOME"
-    )
+      ) {
+        return true;
+      }
+
+      if (
+        transaction.transaction_type ===
+          "LOAN" &&
+        transaction.category ===
+          "PENGEMBALIAN_PINJAMAN"
+      ) {
+        return true;
+      }
+
+      return false;
+    })
     .reduce(
       (sum, transaction) =>
         sum + Number(transaction.amount),
@@ -138,16 +158,40 @@ export async function getDashboard(month: string) {
 
   /*
    * =========================================================
-   * 8. PENGELUARAN BULAN INI
+   * 8. UANG KELUAR
+   *
+   * Termasuk:
+   * - Semua EXPENSE
+   * - Pinjamkan uang ke orang
+   * - Bayar utang
+   *
+   * Catatan:
+   * Pinjamkan uang tetap merupakan uang keluar
+   * dari saldo, tetapi BUKAN expense untuk perhitungan
+   * total aset.
    * =========================================================
    */
 
   const expense = (transactions ?? [])
-    .filter(
-      (transaction) =>
+    .filter((transaction) => {
+      if (
         transaction.transaction_type ===
         "EXPENSE"
-    )
+      ) {
+        return true;
+      }
+
+      if (
+        transaction.transaction_type ===
+          "LOAN" &&
+        transaction.category ===
+          "PINJAMKAN_UANG"
+      ) {
+        return true;
+      }
+
+      return false;
+    })
     .reduce(
       (sum, transaction) =>
         sum + Number(transaction.amount),
@@ -172,12 +216,7 @@ export async function getDashboard(month: string) {
 
   /*
    * =========================================================
-   * 10. TOTAL UANG YANG MASIH DIPINJAM
-   *
-   * Uang yang dipinjam orang adalah aset/piutang.
-   *
-   * Namun uang tersebut sudah keluar dari saldo
-   * tersedia, sehingga harus dikurangi dari saldo.
+   * 10. UANG YANG MASIH DIPINJAM ORANG
    * =========================================================
    */
 
@@ -192,7 +231,7 @@ export async function getDashboard(month: string) {
 
   /*
    * =========================================================
-   * 11. TOTAL UTANG YANG BELUM DIBAYAR
+   * 11. UTANG YANG MASIH HARUS DIBAYAR
    * =========================================================
    */
 
@@ -209,11 +248,12 @@ export async function getDashboard(month: string) {
    * =========================================================
    * 12. NET CASH FLOW
    *
-   * Net Cash Flow hanya melihat:
+   * Untuk cash flow:
    *
-   * Uang Masuk - Uang Keluar
+   * Uang masuk - uang keluar
    *
-   * Pinjaman dan tabungan bukan expense/income.
+   * Pinjamkan uang dianggap uang keluar.
+   * Pinjam dari orang dianggap uang masuk.
    * =========================================================
    */
 
@@ -222,26 +262,43 @@ export async function getDashboard(month: string) {
 
   /*
    * =========================================================
-   * 13. SALDO DASAR
+   * 13. SALDO TERSEDIA
    *
-   * INCOME                 = +
-   * EXPENSE                = -
-   * TABUNGAN_MASUK         = -
-   * TABUNGAN_KELUAR        = +
+   * INCOME
+   *              = +
    *
-   * TRANSAKSI LOAN
-   * tidak dihitung di sini.
+   * EXPENSE
+   *              = -
    *
-   * Karena posisi uang pinjaman dihitung melalui
-   * loanOutstanding di bawah.
+   * TABUNGAN_MASUK
+   *              = -
+   *
+   * TABUNGAN_KELUAR
+   *              = +
+   *
+   * PINJAM_DARI_ORANG
+   *              = +
+   *
+   * PINJAMKAN_UANG
+   *              = -
+   *
+   * PENGEMBALIAN_PINJAMAN
+   *              = +
+   *
+   * BAYAR_UTANG
+   *              = -
    * =========================================================
    */
 
-  const baseAvailable =
-    (allTransactions ?? []).reduce(
+  const available = (allTransactions ?? [])
+    .reduce(
       (balance, transaction) => {
         const amount =
           Number(transaction.amount);
+
+        /*
+         * UANG MASUK
+         */
 
         if (
           transaction.transaction_type ===
@@ -250,12 +307,23 @@ export async function getDashboard(month: string) {
           return balance + amount;
         }
 
+        /*
+         * UANG KELUAR
+         */
+
         if (
           transaction.transaction_type ===
           "EXPENSE"
         ) {
           return balance - amount;
         }
+
+        /*
+         * TABUNGAN MASUK
+         *
+         * Uang berpindah dari saldo
+         * ke tabungan.
+         */
 
         if (
           transaction.transaction_type ===
@@ -265,6 +333,13 @@ export async function getDashboard(month: string) {
         ) {
           return balance - amount;
         }
+
+        /*
+         * TABUNGAN KELUAR
+         *
+         * Uang berpindah dari tabungan
+         * ke saldo.
+         */
 
         if (
           transaction.transaction_type ===
@@ -276,13 +351,49 @@ export async function getDashboard(month: string) {
         }
 
         /*
-         * LOAN tidak dihitung di sini.
+         * KITA PINJAM UANG DARI ORANG
          *
-         * PINJAMKAN_UANG dan
-         * PENGEMBALIAN_PINJAMAN
-         * akan diperhitungkan melalui
-         * loanOutstanding.
+         * Saldo bertambah.
          */
+
+        if (
+          transaction.transaction_type ===
+            "INCOME" &&
+          transaction.category ===
+            "PINJAM_DARI_ORANG"
+        ) {
+          return balance + amount;
+        }
+
+        /*
+         * KITA PINJAMKAN UANG KE ORANG
+         *
+         * Saldo berkurang.
+         */
+
+        if (
+          transaction.transaction_type ===
+            "LOAN" &&
+          transaction.category ===
+            "PINJAMKAN_UANG"
+        ) {
+          return balance - amount;
+        }
+
+        /*
+         * ORANG MENGEMBALIKAN PINJAMAN
+         *
+         * Saldo bertambah.
+         */
+
+        if (
+          transaction.transaction_type ===
+            "LOAN" &&
+          transaction.category ===
+            "PENGEMBALIAN_PINJAMAN"
+        ) {
+          return balance + amount;
+        }
 
         return balance;
       },
@@ -291,38 +402,17 @@ export async function getDashboard(month: string) {
 
   /*
    * =========================================================
-   * 14. SALDO TERSEDIA
-   *
-   * Saldo dasar dikurangi uang yang masih dipinjam
-   * orang.
-   *
-   * Contoh:
-   *
-   * Saldo dasar       Rp49.975.000
-   * Uang dipinjam     Rp1.000.000
-   *
-   * Saldo tersedia    Rp48.975.000
-   * =========================================================
-   */
-
-  const available =
-    baseAvailable -
-    loanOutstanding;
-
-  /*
-   * =========================================================
-   * 15. TOTAL ASET
+   * 14. TOTAL ASET
    *
    * Saldo tersedia
    * + Tabungan
    * + Uang dipinjam orang
    *
-   * Dengan rumus ini:
+   * Pinjamkan uang:
    *
-   * Pinjamkan uang
-   * -> saldo turun
-   * -> piutang naik
-   * -> total aset tetap
+   * Saldo turun
+   * Piutang naik
+   * Total aset tetap.
    * =========================================================
    */
 
@@ -333,7 +423,7 @@ export async function getDashboard(month: string) {
 
   /*
    * =========================================================
-   * 16. RASIO PENGELUARAN
+   * 15. RASIO PENGELUARAN
    * =========================================================
    */
 
