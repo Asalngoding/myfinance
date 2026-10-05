@@ -187,20 +187,18 @@ export default async function DashboardPage() {
             </div>
           </div>
 
-          {/* MENU SEMENTARA */}
+          {/* MENU */}
           <div className="grid grid-cols-2 gap-3 pt-2">
-            {/* MENU */}
-<div className="grid grid-cols-2 gap-3 pt-2">
-  <button
-    type="button"
-    onClick={() => {
-      window.location.href =
-        "/transactions/new";
-    }}
-    className="rounded-2xl bg-slate-900 p-4 font-semibold text-white"
-  >
-    + Transaksi
-  </button>
+            <button
+              type="button"
+              onClick={() => {
+                window.location.href =
+                  "/transactions/new";
+              }}
+              className="rounded-2xl bg-slate-900 p-4 font-semibold text-white"
+            >
+              + Transaksi
+            </button>
 
             <button
               type="button"
