@@ -189,17 +189,16 @@ export default async function DashboardPage() {
 
           {/* MENU */}
           <div className="grid grid-cols-2 gap-3 pt-2">
-            <button
-              type="button"
-              onClick={() => {
-                window.location.href =
-                  "/transactions/new";
-              }}
-              className="rounded-2xl bg-slate-900 p-4 font-semibold text-white"
+
+            {/* TAMBAH TRANSAKSI */}
+            <a
+              href="/transactions/new"
+              className="flex items-center justify-center rounded-2xl bg-slate-900 p-4 font-semibold text-white"
             >
               + Transaksi
-            </button>
+            </a>
 
+            {/* SUMMARY */}
             <button
               type="button"
               className="rounded-2xl bg-white p-4 font-semibold text-slate-900 shadow-sm"
@@ -207,6 +206,7 @@ export default async function DashboardPage() {
               Summary
             </button>
 
+            {/* TABUNGAN */}
             <button
               type="button"
               className="rounded-2xl bg-white p-4 font-semibold text-slate-900 shadow-sm"
@@ -214,12 +214,14 @@ export default async function DashboardPage() {
               Tabungan
             </button>
 
+            {/* UANG PINJAM */}
             <button
               type="button"
               className="rounded-2xl bg-white p-4 font-semibold text-slate-900 shadow-sm"
             >
               Uang Pinjam
             </button>
+
           </div>
 
         </section>
