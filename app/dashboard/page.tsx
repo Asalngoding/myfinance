@@ -127,6 +127,7 @@ export default async function DashboardPage() {
 
         {/* HEADER */}
         <header className="bg-slate-900 px-5 pb-6 pt-8 text-white">
+
           <p className="text-sm text-slate-300">
             Selamat datang,
           </p>
@@ -136,6 +137,7 @@ export default async function DashboardPage() {
           </h1>
 
           <div className="mt-6">
+
             <p className="text-sm text-slate-300">
               Total Aset
             </p>
@@ -143,7 +145,9 @@ export default async function DashboardPage() {
             <p className="mt-1 text-3xl font-bold">
               {rupiah(data.assets)}
             </p>
+
           </div>
+
         </header>
 
         {/* CONTENT */}
@@ -151,6 +155,7 @@ export default async function DashboardPage() {
 
           {/* SALDO */}
           <div className="rounded-2xl bg-white p-5 shadow-sm">
+
             <p className="text-sm text-slate-500">
               Saldo Tersedia
             </p>
@@ -158,12 +163,14 @@ export default async function DashboardPage() {
             <p className="mt-1 text-2xl font-bold text-slate-900">
               {rupiah(data.available)}
             </p>
+
           </div>
 
           {/* INCOME / EXPENSE */}
           <div className="grid grid-cols-2 gap-3">
 
             <div className="rounded-2xl bg-white p-4 shadow-sm">
+
               <p className="text-sm text-slate-500">
                 Uang Masuk
               </p>
@@ -171,9 +178,11 @@ export default async function DashboardPage() {
               <p className="mt-2 text-lg font-bold text-green-600">
                 {rupiah(data.income)}
               </p>
+
             </div>
 
             <div className="rounded-2xl bg-white p-4 shadow-sm">
+
               <p className="text-sm text-slate-500">
                 Uang Keluar
               </p>
@@ -181,12 +190,14 @@ export default async function DashboardPage() {
               <p className="mt-2 text-lg font-bold text-red-600">
                 {rupiah(data.expense)}
               </p>
+
             </div>
 
           </div>
 
           {/* NET CASH FLOW */}
           <div className="rounded-2xl bg-white p-5 shadow-sm">
+
             <p className="text-sm text-slate-500">
               Net Cash Flow
             </p>
@@ -200,6 +211,7 @@ export default async function DashboardPage() {
             >
               {rupiah(data.netCashFlow)}
             </p>
+
           </div>
 
           {/* ASSET SUMMARY */}
@@ -212,6 +224,7 @@ export default async function DashboardPage() {
             <div className="mt-4 space-y-3 text-sm">
 
               <div className="flex justify-between">
+
                 <span className="text-slate-500">
                   Saldo tersedia
                 </span>
@@ -219,9 +232,11 @@ export default async function DashboardPage() {
                 <span className="font-medium">
                   {rupiah(data.available)}
                 </span>
+
               </div>
 
               <div className="flex justify-between">
+
                 <span className="text-slate-500">
                   Tabungan
                 </span>
@@ -229,9 +244,11 @@ export default async function DashboardPage() {
                 <span className="font-medium">
                   {rupiah(data.savingsTotal)}
                 </span>
+
               </div>
 
               <div className="flex justify-between">
+
                 <span className="text-slate-500">
                   Uang dipinjam orang
                 </span>
@@ -239,10 +256,13 @@ export default async function DashboardPage() {
                 <span className="font-medium">
                   {rupiah(data.loanOutstanding)}
                 </span>
+
               </div>
 
               <div className="border-t pt-3">
+
                 <div className="flex justify-between">
+
                   <span className="font-semibold">
                     Total aset
                   </span>
@@ -250,10 +270,13 @@ export default async function DashboardPage() {
                   <span className="font-bold">
                     {rupiah(data.assets)}
                   </span>
+
                 </div>
+
               </div>
 
             </div>
+
           </div>
 
           {/* DEBT */}
@@ -297,6 +320,7 @@ export default async function DashboardPage() {
               />
 
             </div>
+
           </div>
 
           {/* TRANSAKSI TERBARU */}
@@ -305,6 +329,7 @@ export default async function DashboardPage() {
             <div className="flex items-center justify-between">
 
               <div>
+
                 <h2 className="font-semibold text-slate-900">
                   Transaksi Terbaru
                 </h2>
@@ -312,6 +337,7 @@ export default async function DashboardPage() {
                 <p className="mt-1 text-xs text-slate-500">
                   Transaksi pada bulan ini
                 </p>
+
               </div>
 
               <Link
@@ -326,6 +352,7 @@ export default async function DashboardPage() {
             <div className="mt-4 space-y-3">
 
               {data.transactions.length === 0 ? (
+
                 <div className="rounded-xl bg-slate-50 p-4 text-center">
 
                   <p className="text-sm text-slate-500">
@@ -340,7 +367,9 @@ export default async function DashboardPage() {
                   </Link>
 
                 </div>
+
               ) : (
+
                 data.transactions
                   .slice(0, 5)
                   .map((transaction) => {
@@ -403,9 +432,11 @@ export default async function DashboardPage() {
                       </div>
                     );
                   })
+
               )}
 
             </div>
+
           </div>
 
           {/* MENU */}
@@ -436,16 +467,17 @@ export default async function DashboardPage() {
             </Link>
 
             {/* UANG PINJAM */}
-            <button
-              type="button"
-              className="rounded-2xl bg-white p-4 font-semibold text-slate-900 shadow-sm"
+            <Link
+              href="/loans"
+              className="flex items-center justify-center rounded-2xl bg-white p-4 font-semibold text-slate-900 shadow-sm"
             >
               Uang Pinjam
-            </button>
+            </Link>
 
           </div>
 
         </section>
+
       </div>
     </main>
   );
