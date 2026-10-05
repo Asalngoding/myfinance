@@ -7,6 +7,7 @@ import { rupiah } from "@/lib/format";
 const categoryLabels: Record<string, string> = {
   GAJI: "Gaji",
   TRANSFER_ORANG: "Transfer Orang",
+  PINJAM_DARI_ORANG: "Pinjam dari Orang",
 
   BAYAR_UTANG: "Bayar Utang",
   BENSIN: "Bensin",
