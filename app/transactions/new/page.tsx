@@ -13,6 +13,10 @@ const categories = {
     {
       value: "TRANSFER_ORANG",
       label: "Transfer Orang"
+    },
+    {
+      value: "PINJAM_DARI_ORANG",
+      label: "Pinjam dari Orang"
     }
   ],
 
@@ -80,9 +84,11 @@ function getLocalDateTime() {
   const now = new Date();
 
   const year = now.getFullYear();
+
   const month = String(
     now.getMonth() + 1
   ).padStart(2, "0");
+
   const day = String(
     now.getDate()
   ).padStart(2, "0");
@@ -90,6 +96,7 @@ function getLocalDateTime() {
   const hours = String(
     now.getHours()
   ).padStart(2, "0");
+
   const minutes = String(
     now.getMinutes()
   ).padStart(2, "0");
@@ -147,7 +154,10 @@ export default function NewTransactionPage() {
         amount.replace(/\D/g, "")
       );
 
-    if (!numericAmount || numericAmount <= 0) {
+    if (
+      !numericAmount ||
+      numericAmount <= 0
+    ) {
       setError(
         "Nominal harus lebih dari 0."
       );
@@ -176,15 +186,6 @@ export default function NewTransactionPage() {
       router.push("/login");
       return;
     }
-
-    /*
-     * Input datetime-local menghasilkan:
-     *
-     * 2026-10-05T04:15
-     *
-     * Kita ubah menjadi format ISO
-     * dengan timezone lokal browser.
-     */
 
     const localDate =
       new Date(dateTime);
@@ -228,6 +229,7 @@ export default function NewTransactionPage() {
 
         {/* HEADER */}
         <header className="bg-slate-900 px-5 pb-5 pt-6 text-white">
+
           <button
             type="button"
             onClick={() =>
@@ -244,8 +246,9 @@ export default function NewTransactionPage() {
 
           <p className="mt-1 text-sm text-slate-300">
             Catat pemasukan, pengeluaran,
-            tabungan, atau uang pinjam.
+            tabungan, atau pinjaman.
           </p>
+
         </header>
 
         {/* FORM */}
@@ -261,6 +264,7 @@ export default function NewTransactionPage() {
             </label>
 
             <div className="grid grid-cols-2 gap-2">
+
               {[
                 {
                   value: "INCOME",
@@ -296,6 +300,7 @@ export default function NewTransactionPage() {
                   {item.label}
                 </button>
               ))}
+
             </div>
           </div>
 
@@ -308,7 +313,9 @@ export default function NewTransactionPage() {
             <select
               value={category}
               onChange={(e) =>
-                setCategory(e.target.value)
+                setCategory(
+                  e.target.value
+                )
               }
               className="w-full rounded-xl border-0 bg-white px-4 py-3 shadow-sm"
             >
@@ -324,6 +331,27 @@ export default function NewTransactionPage() {
               )}
             </select>
           </div>
+
+          {/* INFO PINJAM DARI ORANG */}
+          {category ===
+            "PINJAM_DARI_ORANG" && (
+            <div className="rounded-xl bg-blue-50 p-3 text-sm leading-5 text-blue-700">
+              Pinjaman dari orang akan
+              menambah saldo tersedia dan
+              dicatat sebagai utang.
+            </div>
+          )}
+
+          {/* INFO PINJAMKAN UANG */}
+          {category ===
+            "PINJAMKAN_UANG" && (
+            <div className="rounded-xl bg-orange-50 p-3 text-sm leading-5 text-orange-700">
+              Uang yang kamu pinjamkan akan
+              mengurangi saldo tersedia dan
+              dicatat sebagai uang yang masih
+              dipinjam orang.
+            </div>
+          )}
 
           {/* AMOUNT */}
           <div>
@@ -359,14 +387,17 @@ export default function NewTransactionPage() {
               type="datetime-local"
               value={dateTime}
               onChange={(e) =>
-                setDateTime(e.target.value)
+                setDateTime(
+                  e.target.value
+                )
               }
               className="w-full rounded-xl border-0 bg-white px-4 py-3 shadow-sm"
               required
             />
 
             <p className="mt-2 text-xs text-slate-500">
-              Waktu mengikuti waktu lokal perangkat.
+              Waktu mengikuti waktu lokal
+              perangkat.
             </p>
           </div>
 
@@ -383,7 +414,7 @@ export default function NewTransactionPage() {
                   e.target.value
                 )
               }
-              placeholder="Contoh: Gaji bulan Oktober"
+              placeholder="Contoh: Pinjam dari Budi"
               rows={3}
               className="w-full resize-none rounded-xl border-0 bg-white px-4 py-3 shadow-sm"
             />
@@ -406,6 +437,7 @@ export default function NewTransactionPage() {
               ? "Menyimpan..."
               : "Simpan Transaksi"}
           </button>
+
         </form>
       </div>
     </main>
