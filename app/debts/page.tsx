@@ -29,23 +29,13 @@ function rupiah(value: number) {
   }).format(value);
 }
 
-function getStatusLabel(
-  status: Debt["status"]
-) {
-  if (status === "UNPAID") {
-    return "Belum Dibayar";
-  }
-
-  if (status === "PARTIAL") {
-    return "Sebagian";
-  }
-
+function getStatusLabel(status: Debt["status"]) {
+  if (status === "UNPAID") return "Belum Dibayar";
+  if (status === "PARTIAL") return "Sebagian";
   return "Lunas";
 }
 
-function getStatusClass(
-  status: Debt["status"]
-) {
+function getStatusClass(status: Debt["status"]) {
   if (status === "UNPAID") {
     return "bg-orange-100 text-orange-700";
   }
@@ -61,29 +51,16 @@ export default function DebtsPage() {
   const router = useRouter();
   const supabase = createClient();
 
-  const [debts, setDebts] =
-    useState<Debt[]>([]);
+  const [debts, setDebts] = useState<Debt[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
-  const [loading, setLoading] =
-    useState(true);
+  const [creditorName, setCreditorName] = useState("");
+  const [totalAmount, setTotalAmount] = useState("");
+  const [dueDate, setDueDate] = useState("");
+  const [description, setDescription] = useState("");
 
-  const [saving, setSaving] =
-    useState(false);
-
-  const [creditorName, setCreditorName] =
-    useState("");
-
-  const [totalAmount, setTotalAmount] =
-    useState("");
-
-  const [dueDate, setDueDate] =
-    useState("");
-
-  const [description, setDescription] =
-    useState("");
-
-  const [error, setError] =
-    useState("");
+  const [error, setError] = useState("");
 
   async function loadDebts() {
     setLoading(true);
@@ -98,10 +75,7 @@ export default function DebtsPage() {
       return;
     }
 
-    const {
-      data,
-      error: fetchError
-    } = await supabase
+    const { data, error: fetchError } = await supabase
       .from("debts")
       .select("*")
       .eq("user_id", user.id)
@@ -127,34 +101,26 @@ export default function DebtsPage() {
     loadDebts();
   }, []);
 
-  async function createDebt(
-    e: FormEvent
-  ) {
+  async function createDebt(e: FormEvent) {
     e.preventDefault();
 
     setError("");
 
-    const numericAmount =
-      Number(
-        totalAmount.replace(/\D/g, "")
-      );
+    const numericAmount = Number(
+      totalAmount.replace(/\D/g, "")
+    );
 
     if (!creditorName.trim()) {
       setError(
         "Nama pemberi pinjaman wajib diisi."
       );
-
       return;
     }
 
-    if (
-      !numericAmount ||
-      numericAmount <= 0
-    ) {
+    if (!numericAmount || numericAmount <= 0) {
       setError(
         "Nominal pinjaman harus lebih dari 0."
       );
-
       return;
     }
 
@@ -169,37 +135,32 @@ export default function DebtsPage() {
       return;
     }
 
-    /*
-     * Membuat data utang.
-     *
-     * Belum membuat transaksi di tahap ini.
-     * Pada tahap berikutnya kita akan menghubungkan
-     * proses ini dengan transaksi:
-     *
-     * PINJAM_DARI_ORANG
-     */
-
     const {
-      error: insertError
-    } = await supabase
-      .from("debts")
-      .insert({
-        user_id: user.id,
-        creditor_name:
+      error: rpcError
+    } = await supabase.rpc(
+      "create_debt_and_transaction",
+      {
+        p_creditor_name:
           creditorName.trim(),
-        description:
-          description.trim() || null,
-        total_amount: numericAmount,
-        paid_amount: 0,
-        due_date:
-          dueDate || null,
-        status: "UNPAID"
-      });
 
-    if (insertError) {
+        p_total_amount:
+          numericAmount,
+
+        p_due_date:
+          dueDate || null,
+
+        p_description:
+          description.trim() || null,
+
+        p_transaction_date:
+          new Date().toISOString()
+      }
+    );
+
+    if (rpcError) {
       setError(
         "Data utang gagal dibuat: " +
-          insertError.message
+          rpcError.message
       );
 
       setSaving(false);
@@ -214,15 +175,15 @@ export default function DebtsPage() {
     await loadDebts();
 
     setSaving(false);
+
+    router.refresh();
   }
 
   return (
     <main className="min-h-screen bg-slate-50">
       <div className="mx-auto min-h-screen w-full max-w-md bg-slate-50 pb-8">
 
-        {/* HEADER */}
         <header className="bg-slate-900 px-5 pb-6 pt-6 text-white">
-
           <button
             type="button"
             onClick={() =>
@@ -238,16 +199,12 @@ export default function DebtsPage() {
           </h1>
 
           <p className="mt-1 text-sm text-slate-300">
-            Kelola uang yang kamu pinjam
-            dari orang lain.
+            Kelola uang yang kamu pinjam dari orang lain.
           </p>
-
         </header>
 
-        {/* CONTENT */}
         <section className="space-y-4 px-4 py-5">
 
-          {/* TAMBAH UTANG */}
           <div className="rounded-2xl bg-white p-5 shadow-sm">
 
             <h2 className="font-semibold text-slate-900">
@@ -255,8 +212,7 @@ export default function DebtsPage() {
             </h2>
 
             <p className="mt-1 text-xs text-slate-500">
-              Catat orang yang memberikan
-              pinjaman kepadamu.
+              Catat orang yang memberikan pinjaman kepadamu.
             </p>
 
             <form
@@ -264,7 +220,6 @@ export default function DebtsPage() {
               className="mt-4 space-y-4"
             >
 
-              {/* PEMBERI PINJAMAN */}
               <div>
                 <label className="mb-2 block text-sm font-semibold">
                   Nama Pemberi Pinjaman
@@ -274,9 +229,7 @@ export default function DebtsPage() {
                   type="text"
                   value={creditorName}
                   onChange={(e) =>
-                    setCreditorName(
-                      e.target.value
-                    )
+                    setCreditorName(e.target.value)
                   }
                   placeholder="Contoh: Budi"
                   className="w-full rounded-xl border-0 bg-slate-50 px-4 py-3 shadow-sm"
@@ -284,7 +237,6 @@ export default function DebtsPage() {
                 />
               </div>
 
-              {/* NOMINAL */}
               <div>
                 <label className="mb-2 block text-sm font-semibold">
                   Nominal Pinjaman
@@ -296,10 +248,7 @@ export default function DebtsPage() {
                   value={totalAmount}
                   onChange={(e) =>
                     setTotalAmount(
-                      e.target.value.replace(
-                        /\D/g,
-                        ""
-                      )
+                      e.target.value.replace(/\D/g, "")
                     )
                   }
                   placeholder="Contoh: 1000000"
@@ -308,7 +257,6 @@ export default function DebtsPage() {
                 />
               </div>
 
-              {/* JATUH TEMPO */}
               <div>
                 <label className="mb-2 block text-sm font-semibold">
                   Jatuh Tempo
@@ -318,15 +266,12 @@ export default function DebtsPage() {
                   type="date"
                   value={dueDate}
                   onChange={(e) =>
-                    setDueDate(
-                      e.target.value
-                    )
+                    setDueDate(e.target.value)
                   }
                   className="w-full rounded-xl border-0 bg-slate-50 px-4 py-3 shadow-sm"
                 />
               </div>
 
-              {/* KETERANGAN */}
               <div>
                 <label className="mb-2 block text-sm font-semibold">
                   Keterangan
@@ -335,9 +280,7 @@ export default function DebtsPage() {
                 <textarea
                   value={description}
                   onChange={(e) =>
-                    setDescription(
-                      e.target.value
-                    )
+                    setDescription(e.target.value)
                   }
                   placeholder="Contoh: Pinjaman untuk kebutuhan tertentu"
                   rows={3}
@@ -345,14 +288,17 @@ export default function DebtsPage() {
                 />
               </div>
 
-              {/* ERROR */}
+              <div className="rounded-xl bg-blue-50 p-3 text-xs leading-5 text-blue-700">
+                Pinjaman yang kamu terima akan otomatis
+                masuk ke saldo dan tercatat sebagai utang.
+              </div>
+
               {error && (
                 <div className="rounded-xl bg-red-50 p-3 text-sm text-red-600">
                   {error}
                 </div>
               )}
 
-              {/* SUBMIT */}
               <button
                 type="submit"
                 disabled={saving}
@@ -366,7 +312,6 @@ export default function DebtsPage() {
             </form>
           </div>
 
-          {/* DAFTAR UTANG */}
           <div className="rounded-2xl bg-white p-5 shadow-sm">
 
             <div className="flex items-center justify-between">
@@ -377,8 +322,7 @@ export default function DebtsPage() {
                 </h2>
 
                 <p className="mt-1 text-xs text-slate-500">
-                  Daftar pinjaman yang masih
-                  harus kamu bayar.
+                  Daftar pinjaman yang masih harus kamu bayar.
                 </p>
               </div>
 
@@ -391,14 +335,15 @@ export default function DebtsPage() {
             <div className="mt-4 space-y-4">
 
               {loading ? (
-                <div className="rounded-xl bg-slate-50 p-4 text-center">
 
+                <div className="rounded-xl bg-slate-50 p-4 text-center">
                   <p className="text-sm text-slate-500">
                     Memuat data utang...
                   </p>
-
                 </div>
+
               ) : debts.length === 0 ? (
+
                 <div className="rounded-xl bg-slate-50 p-4 text-center">
 
                   <p className="text-sm text-slate-500">
@@ -406,23 +351,20 @@ export default function DebtsPage() {
                   </p>
 
                   <p className="mt-1 text-xs text-slate-400">
-                    Tambahkan data utang
-                    menggunakan form di atas.
+                    Tambahkan data utang menggunakan form di atas.
                   </p>
 
                 </div>
+
               ) : (
+
                 debts.map((debt) => {
 
                   const total =
-                    Number(
-                      debt.total_amount
-                    );
+                    Number(debt.total_amount);
 
                   const paid =
-                    Number(
-                      debt.paid_amount
-                    );
+                    Number(debt.paid_amount);
 
                   const outstanding =
                     Math.max(
@@ -436,7 +378,6 @@ export default function DebtsPage() {
                       className="rounded-2xl bg-slate-50 p-4"
                     >
 
-                      {/* HEADER CARD */}
                       <div className="flex items-start justify-between gap-3">
 
                         <div className="min-w-0">
@@ -465,11 +406,9 @@ export default function DebtsPage() {
 
                       </div>
 
-                      {/* NOMINAL */}
                       <div className="mt-4 space-y-2">
 
                         <div className="flex justify-between text-sm">
-
                           <span className="text-slate-500">
                             Total utang
                           </span>
@@ -477,11 +416,9 @@ export default function DebtsPage() {
                           <span className="font-semibold text-slate-900">
                             {rupiah(total)}
                           </span>
-
                         </div>
 
                         <div className="flex justify-between text-sm">
-
                           <span className="text-slate-500">
                             Sudah dibayar
                           </span>
@@ -489,7 +426,6 @@ export default function DebtsPage() {
                           <span className="font-semibold text-green-600">
                             {rupiah(paid)}
                           </span>
-
                         </div>
 
                         <div className="flex justify-between border-t pt-2 text-sm">
@@ -499,16 +435,13 @@ export default function DebtsPage() {
                           </span>
 
                           <span className="font-bold text-orange-500">
-                            {rupiah(
-                              outstanding
-                            )}
+                            {rupiah(outstanding)}
                           </span>
 
                         </div>
 
                       </div>
 
-                      {/* JATUH TEMPO */}
                       {debt.due_date && (
                         <p className="mt-3 text-xs text-slate-500">
                           Jatuh tempo:{" "}
@@ -527,9 +460,7 @@ export default function DebtsPage() {
                         </p>
                       )}
 
-                      {/* ACTION */}
-                      {debt.status !==
-                        "PAID" && (
+                      {debt.status !== "PAID" && (
                         <button
                           type="button"
                           className="mt-4 w-full rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white"
@@ -541,6 +472,7 @@ export default function DebtsPage() {
                     </div>
                   );
                 })
+
               )}
 
             </div>
