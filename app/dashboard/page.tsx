@@ -8,7 +8,6 @@ const categoryLabels: Record<string, string> = {
   GAJI: "Gaji",
   TRANSFER_ORANG: "Transfer Orang",
   PINJAM_DARI_ORANG: "Pinjam dari Orang",
-
   BAYAR_UTANG: "Bayar Utang",
   BENSIN: "Bensin",
   MAKAN_JAJAN: "Makan & Jajan",
@@ -16,10 +15,8 @@ const categoryLabels: Record<string, string> = {
   LIBURAN: "Liburan",
   SERVIS_MOTOR: "Servis Motor",
   LAINNYA: "Lainnya",
-
   TABUNGAN_MASUK: "Masuk ke Tabungan",
   TABUNGAN_KELUAR: "Ambil dari Tabungan",
-
   PINJAMKAN_UANG: "Pinjamkan Uang",
   PENGEMBALIAN_PINJAMAN:
     "Pengembalian Pinjaman"
@@ -37,21 +34,27 @@ function formatDateTime(value: string) {
   }).format(date);
 }
 
-function getTransactionAmount(
+function getTransactionStyle(
   type: string,
   category: string
 ) {
   if (type === "INCOME") {
     return {
       prefix: "+",
-      className: "text-green-600"
+      color: "text-green-600",
+      icon: "↗",
+      iconBg: "bg-green-50",
+      iconColor: "text-green-600"
     };
   }
 
   if (type === "EXPENSE") {
     return {
       prefix: "-",
-      className: "text-red-600"
+      color: "text-red-500",
+      icon: "↘",
+      iconBg: "bg-red-50",
+      iconColor: "text-red-500"
     };
   }
 
@@ -61,7 +64,10 @@ function getTransactionAmount(
   ) {
     return {
       prefix: "-",
-      className: "text-orange-500"
+      color: "text-orange-500",
+      icon: "↓",
+      iconBg: "bg-orange-50",
+      iconColor: "text-orange-500"
     };
   }
 
@@ -71,7 +77,10 @@ function getTransactionAmount(
   ) {
     return {
       prefix: "+",
-      className: "text-green-600"
+      color: "text-green-600",
+      icon: "↑",
+      iconBg: "bg-green-50",
+      iconColor: "text-green-600"
     };
   }
 
@@ -81,23 +90,33 @@ function getTransactionAmount(
   ) {
     return {
       prefix: "-",
-      className: "text-orange-500"
+      color: "text-orange-500",
+      icon: "↓",
+      iconBg: "bg-orange-50",
+      iconColor: "text-orange-500"
     };
   }
 
   if (
     type === "LOAN" &&
-    category === "PENGEMBALIAN_PINJAMAN"
+    category ===
+      "PENGEMBALIAN_PINJAMAN"
   ) {
     return {
       prefix: "+",
-      className: "text-green-600"
+      color: "text-green-600",
+      icon: "↑",
+      iconBg: "bg-green-50",
+      iconColor: "text-green-600"
     };
   }
 
   return {
     prefix: "",
-    className: "text-slate-900"
+    color: "text-slate-900",
+    icon: "•",
+    iconBg: "bg-slate-100",
+    iconColor: "text-slate-500"
   };
 }
 
@@ -114,305 +133,399 @@ export default async function DashboardPage() {
 
   const now = new Date();
 
-  const month = `${now.getFullYear()}-${String(
-    now.getMonth() + 1
-  ).padStart(2, "0")}`;
+  const month =
+    `${now.getFullYear()}-${String(
+      now.getMonth() + 1
+    ).padStart(2, "0")}`;
 
   const data = await getDashboard(month);
 
-  const saldo =
-    data.income - data.expense;
+  const monthName =
+    new Intl.DateTimeFormat("id-ID", {
+      month: "long",
+      year: "numeric"
+    }).format(now);
+
+  const recentTransactions =
+    data.transactions.slice(0, 5);
 
   return (
-    <main className="min-h-screen bg-slate-50">
-
-      <div className="mx-auto min-h-screen w-full max-w-md bg-slate-50 pb-8">
+    <main className="min-h-screen bg-slate-100">
+      <div className="mx-auto min-h-screen w-full max-w-md overflow-hidden bg-gradient-to-b from-sky-400 via-sky-300 to-slate-50 pb-24">
 
         {/* HEADER */}
-        <header className="bg-slate-900 px-5 pb-6 pt-8 text-white">
+        <header className="px-5 pb-5 pt-5 text-white">
 
-          <p className="text-sm text-slate-300">
-            Selamat datang,
-          </p>
+          {/* Fake status bar */}
+          <div className="relative mb-5 flex items-center justify-between px-1 text-sm font-semibold">
+            <span>
+              {new Intl.DateTimeFormat("id-ID", {
+                hour: "2-digit",
+                minute: "2-digit",
+                hour12: false
+              }).format(now)}
+            </span>
 
-          <h1 className="mt-1 text-2xl font-bold">
-            MyFinance
-          </h1>
+            <div className="absolute left-1/2 top-0 h-7 w-28 -translate-x-1/2 rounded-full bg-black" />
 
-          <div className="mt-6">
-
-            <p className="text-sm text-slate-300">
-              Saldo
-            </p>
-
-            <p
-              className={`mt-1 text-3xl font-bold ${
-                saldo >= 0
-                  ? "text-white"
-                  : "text-red-300"
-              }`}
-            >
-              {rupiah(saldo)}
-            </p>
-
-            <p className="mt-2 text-xs text-slate-400">
-              Uang Masuk − Uang Keluar
-            </p>
-
+            <span className="text-xs">
+              ▮▮▮ 90%
+            </span>
           </div>
 
-        </header>
+          {/* PROFILE */}
+          <div className="flex items-center justify-between">
 
-        {/* CONTENT */}
-        <section className="space-y-4 px-4 py-5">
+            <div className="flex items-center gap-3">
 
-          {/* INCOME / EXPENSE */}
-          <div className="grid grid-cols-2 gap-3">
-
-            <div className="rounded-2xl bg-white p-4 shadow-sm">
-
-              <p className="text-sm text-slate-500">
-                Uang Masuk
-              </p>
-
-              <p className="mt-2 text-lg font-bold text-green-600">
-                {rupiah(data.income)}
-              </p>
-
-            </div>
-
-            <div className="rounded-2xl bg-white p-4 shadow-sm">
-
-              <p className="text-sm text-slate-500">
-                Uang Keluar
-              </p>
-
-              <p className="mt-2 text-lg font-bold text-red-600">
-                {rupiah(data.expense)}
-              </p>
-
-            </div>
-
-          </div>
-
-          {/* NET CASH FLOW */}
-          <div className="rounded-2xl bg-white p-5 shadow-sm">
-
-            <div className="flex items-center justify-between">
-
-              <div>
-
-                <p className="text-sm text-slate-500">
-                  Net Cash Flow
-                </p>
-
-                <p
-                  className={`mt-1 text-2xl font-bold ${
-                    data.netCashFlow >= 0
-                      ? "text-green-600"
-                      : "text-red-600"
-                  }`}
-                >
-                  {rupiah(
-                    data.netCashFlow
-                  )}
-                </p>
-
+              <div className="flex h-12 w-12 items-center justify-center rounded-full border-2 border-white/70 bg-white/80 text-2xl shadow-sm">
+                👨🏻
               </div>
 
-              <div className="text-right">
-
-                <p className="text-xs text-slate-400">
-                  Bulan ini
+              <div>
+                <p className="text-xs text-white/80">
+                  Selamat datang,
                 </p>
 
-                <p className="mt-1 text-xs font-medium text-slate-500">
-                  Masuk − Keluar
-                </p>
+                <h1 className="text-xl font-extrabold tracking-tight">
+                  Galih Agil
+                </h1>
 
+                <p className="mt-0.5 text-xs text-white/80">
+                  Kelola keuanganmu lebih mudah
+                </p>
               </div>
 
             </div>
 
-          </div>
+            <div className="flex gap-2">
 
-          {/* EXPENSE RATIO */}
-          <div className="rounded-2xl bg-white p-5 shadow-sm">
-
-            <div className="flex items-center justify-between">
-
-              <p className="text-sm text-slate-500">
-                Rasio Pengeluaran
-              </p>
-
-              <p className="font-bold text-slate-900">
-                {data.expenseRatio.toFixed(1)}%
-              </p>
-
-            </div>
-
-            <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100">
-
-              <div
-                className="h-full rounded-full bg-slate-900"
-                style={{
-                  width: `${Math.min(
-                    data.expenseRatio,
-                    100
-                  )}%`
-                }}
-              />
-
-            </div>
-
-          </div>
-
-          {/* TRANSAKSI TERBARU */}
-          <div className="rounded-2xl bg-white p-5 shadow-sm">
-
-            <div className="flex items-center justify-between">
-
-              <div>
-
-                <h2 className="font-semibold text-slate-900">
-                  Transaksi Terbaru
-                </h2>
-
-                <p className="mt-1 text-xs text-slate-500">
-                  Transaksi pada bulan ini
-                </p>
-
+              <div className="flex h-9 w-9 items-center justify-center rounded-full border border-white/20 bg-white/15 text-lg backdrop-blur">
+                ⚙
               </div>
 
               <Link
-                href="/transactions"
-                className="text-sm font-semibold text-slate-700"
+                href="/login"
+                className="flex h-9 w-9 items-center justify-center rounded-full border border-white/20 bg-white/15 text-lg backdrop-blur"
               >
-                Lihat semua
+                ⇥
               </Link>
 
             </div>
 
-            <div className="mt-4 space-y-3">
+          </div>
+        </header>
 
-              {data.transactions.length === 0 ? (
+        <div className="px-4">
 
-                <div className="rounded-xl bg-slate-50 p-4 text-center">
+          {/* SALDO */}
+          <section className="rounded-3xl bg-white p-5 shadow-[0_10px_30px_rgba(30,80,130,0.12)]">
 
-                  <p className="text-sm text-slate-500">
-                    Belum ada transaksi.
-                  </p>
+            <div className="flex items-center justify-between">
 
-                  <Link
-                    href="/transactions/new"
-                    className="mt-2 inline-block text-sm font-semibold text-slate-900"
-                  >
-                    + Tambah transaksi
-                  </Link>
+              <p className="text-xs font-bold tracking-wide text-slate-500">
+                SALDO TERSEDIA
+              </p>
 
+              <span className="text-slate-400">
+                ◉
+              </span>
+
+            </div>
+
+            <p className="mt-1 text-3xl font-extrabold tracking-tight text-slate-900">
+              {rupiah(data.available)}
+            </p>
+
+            <p className="mt-1 text-[11px] text-slate-400">
+              Saldo setelah memperhitungkan tabungan
+            </p>
+
+            {/* INCOME / EXPENSE */}
+            <div className="mt-4 grid grid-cols-2 gap-2">
+
+              <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
+
+                <p className="text-[10px] text-slate-400">
+                  Uang Masuk • Bulan ini
+                </p>
+
+                <p className="mt-1 text-sm font-extrabold text-green-600">
+                  +{rupiah(data.income)}
+                </p>
+
+              </div>
+
+              <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
+
+                <p className="text-[10px] text-slate-400">
+                  Uang Keluar • Bulan ini
+                </p>
+
+                <p className="mt-1 text-sm font-extrabold text-red-500">
+                  {rupiah(data.expense)}
+                </p>
+
+              </div>
+
+            </div>
+
+          </section>
+
+          {/* NET CASH FLOW + RASIO */}
+          <div className="mt-3 grid grid-cols-2 gap-2">
+
+            <section className="rounded-2xl bg-gradient-to-br from-blue-600 to-sky-500 p-4 text-white shadow-[0_8px_20px_rgba(22,119,232,0.18)]">
+
+              <p className="text-[10px] font-semibold text-white/75">
+                NET CASH FLOW
+              </p>
+
+              <p className="mt-1 text-lg font-extrabold">
+                {rupiah(data.netCashFlow)}
+              </p>
+
+              <p className="mt-1 text-[9px] text-white/75">
+                {monthName}
+              </p>
+
+            </section>
+
+            <section className="flex rounded-2xl bg-white p-4 shadow-[0_7px_20px_rgba(33,87,140,0.08)]">
+
+              <div className="w-full">
+
+                <p className="text-[10px] font-bold text-slate-400">
+                  RASIO PENGELUARAN
+                </p>
+
+                <p className="mt-1 text-xl font-extrabold text-red-500">
+                  {data.expenseRatio.toFixed(1)}%
+                </p>
+
+                <p className="mt-1 text-[9px] leading-tight text-slate-400">
+                  Pengeluaran dibandingkan uang masuk
+                </p>
+
+              </div>
+
+            </section>
+
+          </div>
+
+          {/* MENU UTAMA */}
+          <div className="mb-3 mt-5 flex items-center justify-between px-1">
+
+            <h2 className="text-lg font-extrabold tracking-tight text-slate-900">
+              Menu Utama
+            </h2>
+
+          </div>
+
+          <section className="rounded-3xl bg-white px-3 py-5 shadow-[0_7px_22px_rgba(33,87,140,0.08)]">
+
+            <div className="grid grid-cols-3 gap-y-5">
+
+              <Link
+                href="/transactions/new"
+                className="group text-center"
+              >
+                <div className="mx-auto mb-2 flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-3xl font-light text-blue-600 transition-transform group-active:scale-95">
+                  ＋
                 </div>
 
-              ) : (
+                <p className="text-[11px] font-bold text-slate-700">
+                  Transaksi
+                </p>
+              </Link>
 
-                data.transactions
-                  .slice(0, 5)
-                  .map((transaction) => {
+              <Link
+                href="/transactions"
+                className="group text-center"
+              >
+                <div className="mx-auto mb-2 flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-2xl text-blue-600 transition-transform group-active:scale-95">
+                  ▤
+                </div>
 
-                    const amount =
-                      Number(
-                        transaction.amount
-                      );
+                <p className="text-[11px] font-bold text-slate-700">
+                  History
+                  <br />
+                  Transaksi
+                </p>
+              </Link>
 
-                    const amountStyle =
-                      getTransactionAmount(
-                        transaction.transaction_type,
-                        transaction.category
-                      );
+              <Link
+                href="/savings"
+                className="group text-center"
+              >
+                <div className="mx-auto mb-2 flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-50 text-2xl text-amber-500 transition-transform group-active:scale-95">
+                  ▣
+                </div>
 
-                    const categoryLabel =
-                      categoryLabels[
-                        transaction.category
-                      ] ??
-                      transaction.category;
+                <p className="text-[11px] font-bold text-slate-700">
+                  Tabungan
+                </p>
+              </Link>
 
-                    return (
-                      <div
-                        key={transaction.id}
-                        className="rounded-xl bg-slate-50 p-3"
-                      >
+            </div>
 
-                        <div className="flex items-start justify-between gap-3">
+          </section>
 
-                          <div className="min-w-0">
+          {/* TRANSAKSI TERBARU */}
+          <div className="mb-3 mt-5 flex items-center justify-between px-1">
 
-                            <p className="truncate text-sm font-semibold text-slate-900">
-                              {categoryLabel}
-                            </p>
+            <h2 className="text-lg font-extrabold tracking-tight text-slate-900">
+              Transaksi Terbaru
+            </h2>
 
-                            {transaction.description && (
-                              <p className="mt-1 truncate text-xs text-slate-500">
-                                {transaction.description}
-                              </p>
-                            )}
+            <Link
+              href="/transactions"
+              className="text-xs font-bold text-blue-600"
+            >
+              Lihat semua →
+            </Link>
 
-                            <p className="mt-1 text-xs text-slate-400">
-                              {formatDateTime(
+          </div>
+
+          <section className="rounded-3xl bg-white px-4 shadow-[0_7px_22px_rgba(33,87,140,0.08)]">
+
+            {recentTransactions.length === 0 ? (
+
+              <div className="py-8 text-center">
+
+                <div className="text-3xl">
+                  🧾
+                </div>
+
+                <p className="mt-2 text-sm font-semibold text-slate-600">
+                  Belum ada transaksi
+                </p>
+
+                <p className="mt-1 text-xs text-slate-400">
+                  Tambahkan transaksi pertamamu.
+                </p>
+
+              </div>
+
+            ) : (
+
+              recentTransactions.map(
+                (transaction, index) => {
+
+                  const style =
+                    getTransactionStyle(
+                      transaction.transaction_type,
+                      transaction.category
+                    );
+
+                  return (
+                    <div
+                      key={transaction.id}
+                      className={`flex items-center justify-between py-3.5 ${
+                        index > 0
+                          ? "border-t border-slate-100"
+                          : ""
+                      }`}
+                    >
+
+                      <div className="flex min-w-0 items-center gap-3">
+
+                        <div
+                          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-[13px] ${style.iconBg} ${style.iconColor} text-lg font-bold`}
+                        >
+                          {style.icon}
+                        </div>
+
+                        <div className="min-w-0">
+
+                          <p className="truncate text-[13px] font-extrabold text-slate-800">
+                            {categoryLabels[
+                              transaction.category
+                            ] ??
+                              transaction.category}
+                          </p>
+
+                          <p className="truncate text-[10px] text-slate-400">
+                            {transaction.description ||
+                              formatDateTime(
                                 transaction.transaction_date
                               )}
-                            </p>
+                          </p>
 
-                          </div>
-
-                          <p
-                            className={`shrink-0 text-sm font-bold ${amountStyle.className}`}
-                          >
-                            {amountStyle.prefix}
-                            {rupiah(amount)}
+                          <p className="mt-0.5 text-[9px] text-slate-400">
+                            {formatDateTime(
+                              transaction.transaction_date
+                            )}
                           </p>
 
                         </div>
 
                       </div>
-                    );
 
-                  })
+                      <p
+                        className={`ml-3 shrink-0 text-[12px] font-extrabold ${style.color}`}
+                      >
+                        {style.prefix}
+                        {rupiah(
+                          transaction.amount
+                        )}
+                      </p>
 
-              )}
+                    </div>
+                  );
+                }
+              )
 
-            </div>
+            )}
 
-          </div>
+          </section>
 
-          {/* MENU */}
-          <div className="grid grid-cols-2 gap-3 pt-2">
-
-            <Link
-              href="/transactions/new"
-              className="flex items-center justify-center rounded-2xl bg-slate-900 p-4 font-semibold text-white"
-            >
-              + Transaksi
-            </Link>
-
-            <Link
-              href="/transactions"
-              className="flex items-center justify-center rounded-2xl bg-white p-4 font-semibold text-slate-900 shadow-sm"
-            >
-              History Transaksi
-            </Link>
-
-            <Link
-              href="/savings"
-              className="col-span-2 flex items-center justify-center rounded-2xl bg-white p-4 font-semibold text-slate-900 shadow-sm"
-            >
-              Tabungan
-            </Link>
-
-          </div>
-
-        </section>
-
+        </div>
       </div>
 
+      {/* BOTTOM NAVIGATION */}
+      <nav className="fixed bottom-0 left-1/2 z-20 flex h-[76px] w-full max-w-md -translate-x-1/2 items-center justify-around border-t border-slate-100 bg-white/95 px-8 pb-[env(safe-area-inset-bottom)] pt-2 backdrop-blur-xl">
+
+        <Link
+          href="/dashboard"
+          className="flex w-20 flex-col items-center text-blue-600"
+        >
+          <span className="text-2xl">
+            ⌂
+          </span>
+
+          <span className="mt-0.5 text-[10px] font-bold">
+            Beranda
+          </span>
+        </Link>
+
+        <Link
+          href="/transactions/new"
+          className="flex w-20 flex-col items-center text-slate-500"
+        >
+          <span className="mb-0.5 flex h-11 w-11 -translate-y-4 items-center justify-center rounded-2xl border-4 border-slate-50 bg-blue-600 text-2xl text-white shadow-lg shadow-blue-200">
+            ＋
+          </span>
+
+          <span className="-mt-3 text-[10px] font-bold">
+            Transaksi
+          </span>
+        </Link>
+
+        <Link
+          href="/savings"
+          className="flex w-20 flex-col items-center text-slate-500"
+        >
+          <span className="text-2xl">
+            ▣
+          </span>
+
+          <span className="mt-0.5 text-[10px] font-bold">
+            Tabungan
+          </span>
+        </Link>
+
+      </nav>
     </main>
   );
 }
