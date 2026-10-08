@@ -1009,23 +1009,20 @@ export default function SavingsPage() {
           </button>
 
           <button
-            type="button"
-            onClick={() =>
-              router.push(
-                "/transactions"
-              )
-            }
-            className="flex flex-col items-center gap-1 rounded-2xl py-2 text-slate-400"
-          >
-            <span className="text-xl">
-              ≡
-            </span>
+  type="button"
+  onClick={() =>
+    router.push("/transactions/new")
+  }
+  className="flex flex-col items-center rounded-2xl py-2 text-slate-400"
+>
+  <span className="mb-0.5 flex h-11 w-11 -translate-y-4 items-center justify-center rounded-2xl border-4 border-slate-50 bg-blue-600 text-2xl text-white shadow-lg shadow-blue-200">
+    ＋
+  </span>
 
-            <span className="text-[10px] font-bold">
-              Transaksi
-            </span>
-          </button>
-
+  <span className="-mt-3 text-[10px] font-bold">
+    Transaksi
+  </span>
+</button>
           <button
             type="button"
             className="flex flex-col items-center gap-1 rounded-2xl py-2 text-blue-500"
