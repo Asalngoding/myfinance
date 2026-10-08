@@ -120,10 +120,12 @@ export default async function DashboardPage() {
 
   const data = await getDashboard(month);
 
-  const saldo = data.income - data.expense;
+  const saldo =
+    data.income - data.expense;
 
   return (
     <main className="min-h-screen bg-slate-50">
+
       <div className="mx-auto min-h-screen w-full max-w-md bg-slate-50 pb-8">
 
         {/* HEADER */}
@@ -199,6 +201,7 @@ export default async function DashboardPage() {
             <div className="flex items-center justify-between">
 
               <div>
+
                 <p className="text-sm text-slate-500">
                   Net Cash Flow
                 </p>
@@ -210,8 +213,11 @@ export default async function DashboardPage() {
                       : "text-red-600"
                   }`}
                 >
-                  {rupiah(data.netCashFlow)}
+                  {rupiah(
+                    data.netCashFlow
+                  )}
                 </p>
+
               </div>
 
               <div className="text-right">
@@ -313,7 +319,9 @@ export default async function DashboardPage() {
                   .map((transaction) => {
 
                     const amount =
-                      Number(transaction.amount);
+                      Number(
+                        transaction.amount
+                      );
 
                     const amountStyle =
                       getTransactionAmount(
@@ -366,6 +374,7 @@ export default async function DashboardPage() {
 
                       </div>
                     );
+
                   })
 
               )}
@@ -384,25 +393,18 @@ export default async function DashboardPage() {
               + Transaksi
             </Link>
 
-            <button
-              type="button"
-              className="rounded-2xl bg-white p-4 font-semibold text-slate-900 shadow-sm"
-            >
-              Summary
-            </button>
-
             <Link
-              href="/savings"
+              href="/transactions"
               className="flex items-center justify-center rounded-2xl bg-white p-4 font-semibold text-slate-900 shadow-sm"
             >
-              Tabungan
+              History Transaksi
             </Link>
 
             <Link
-              href="/loans"
-              className="flex items-center justify-center rounded-2xl bg-white p-4 font-semibold text-slate-900 shadow-sm"
+              href="/savings"
+              className="col-span-2 flex items-center justify-center rounded-2xl bg-white p-4 font-semibold text-slate-900 shadow-sm"
             >
-              Uang Pinjam
+              Tabungan
             </Link>
 
           </div>
@@ -410,6 +412,7 @@ export default async function DashboardPage() {
         </section>
 
       </div>
+
     </main>
   );
 }
