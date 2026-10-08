@@ -1,26 +1,44 @@
 import { createClient } from "@/lib/supabase/server";
 
-export async function getDashboard(month: string) {
+export async function getDashboard(
+  month: string
+) {
   const supabase = await createClient();
 
-  /*
-   * =========================================================
-   * 1. RANGE BULAN
-   * =========================================================
-   */
+  const startDate =
+    `${month}-01T00:00:00`;
 
-  const start = `${month}-01`;
+  const nextMonthDate = new Date(
+    `${month}-01T00:00:00`
+  );
 
-  const endDate = new Date(`${month}-01T00:00:00`);
-  endDate.setMonth(endDate.getMonth() + 1);
+  nextMonthDate.setMonth(
+    nextMonthDate.getMonth() + 1
+  );
 
-  const end = endDate.toISOString().slice(0, 10);
+  const nextMonth =
+    `${nextMonthDate.getFullYear()}-${String(
+      nextMonthDate.getMonth() + 1
+    ).padStart(2, "0")}-01T00:00:00`;
 
-  /*
-   * =========================================================
-   * 2. TRANSAKSI BULAN TERPILIH
-   * =========================================================
-   */
+  const {
+    data: {
+      user
+    }
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return {
+      income: 0,
+      expense: 0,
+      savingsIn: 0,
+      savingsOut: 0,
+      netCashFlow: 0,
+      available: 0,
+      expenseRatio: 0,
+      transactions: []
+    };
+  }
 
   const {
     data: transactions,
@@ -28,404 +46,113 @@ export async function getDashboard(month: string) {
   } = await supabase
     .from("transactions")
     .select("*")
-    .gte("transaction_date", start)
-    .lt("transaction_date", end)
+    .eq("user_id", user.id)
+    .gte(
+      "transaction_date",
+      startDate
+    )
+    .lt(
+      "transaction_date",
+      nextMonth
+    )
     .order("transaction_date", {
-      ascending: false
-    })
-    .order("created_at", {
       ascending: false
     });
 
   if (error) {
-    throw error;
+    throw new Error(
+      "Gagal mengambil transaksi: " +
+        error.message
+    );
+  }
+
+  const rows = transactions ?? [];
+
+  let income = 0;
+  let expense = 0;
+  let savingsIn = 0;
+  let savingsOut = 0;
+
+  for (const transaction of rows) {
+    const amount =
+      Number(transaction.amount);
+
+    const type =
+      transaction.transaction_type;
+
+    const category =
+      transaction.category;
+
+    /*
+     * UANG MASUK
+     *
+     * Semua INCOME menambah
+     * pemasukan.
+     */
+    if (type === "INCOME") {
+      income += amount;
+      continue;
+    }
+
+    /*
+     * UANG KELUAR
+     *
+     * Semua EXPENSE mengurangi
+     * uang tersedia.
+     */
+    if (type === "EXPENSE") {
+      expense += amount;
+      continue;
+    }
+
+    /*
+     * TABUNGAN
+     *
+     * TABUNGAN_MASUK:
+     * uang dipindahkan dari saldo
+     * tersedia ke tabungan.
+     *
+     * TABUNGAN_KELUAR:
+     * uang dipindahkan dari tabungan
+     * kembali ke saldo tersedia.
+     */
+    if (
+      type === "TRANSFER" &&
+      category === "TABUNGAN_MASUK"
+    ) {
+      savingsIn += amount;
+      continue;
+    }
+
+    if (
+      type === "TRANSFER" &&
+      category === "TABUNGAN_KELUAR"
+    ) {
+      savingsOut += amount;
+      continue;
+    }
   }
 
   /*
-   * =========================================================
-   * 3. SEMUA TRANSAKSI SAMPAI AKHIR BULAN
-   * =========================================================
-   */
-
-  const {
-    data: allTransactions,
-    error: allTransactionsError
-  } = await supabase
-    .from("transactions")
-    .select(
-      "transaction_type, category, amount, transaction_date"
-    )
-    .lt("transaction_date", end);
-
-  if (allTransactionsError) {
-    throw allTransactionsError;
-  }
-
-  /*
-   * =========================================================
-   * 4. TABUNGAN
-   * =========================================================
-   */
-
-  const {
-    data: savings,
-    error: savingsError
-  } = await supabase
-    .from("savings")
-    .select("current_amount");
-
-  if (savingsError) {
-    throw savingsError;
-  }
-
-  /*
-   * =========================================================
-   * 5. UANG DIPINJAMKAN KE ORANG
-   * =========================================================
-   */
-
-  const {
-    data: loans,
-    error: loansError
-  } = await supabase
-    .from("loans")
-    .select(
-      "total_amount, returned_amount"
-    )
-    .neq("status", "RETURNED");
-
-  if (loansError) {
-    throw loansError;
-  }
-
-  /*
-   * =========================================================
-   * 6. UTANG KITA
-   * =========================================================
-   */
-
-  const {
-    data: debts,
-    error: debtsError
-  } = await supabase
-    .from("debts")
-    .select(
-      "total_amount, paid_amount"
-    )
-    .neq("status", "PAID");
-
-  if (debtsError) {
-    throw debtsError;
-  }
-
-  /*
-   * =========================================================
-   * 7. UANG MASUK
+   * Saldo tersedia:
    *
-   * Termasuk:
-   * - Gaji
-   * - Transfer Orang
-   * - Pinjam dari Orang
-   * - Pengembalian Pinjaman
-   * =========================================================
+   * Uang Masuk
+   * - Uang Keluar
+   * - Menabung
+   * + Ambil Tabungan
    */
-
-  const income = (transactions ?? [])
-    .filter((transaction) => {
-      if (
-        transaction.transaction_type ===
-        "INCOME"
-      ) {
-        return true;
-      }
-
-      if (
-        transaction.transaction_type ===
-          "LOAN" &&
-        transaction.category ===
-          "PENGEMBALIAN_PINJAMAN"
-      ) {
-        return true;
-      }
-
-      return false;
-    })
-    .reduce(
-      (sum, transaction) =>
-        sum + Number(transaction.amount),
-      0
-    );
+  const available =
+    income -
+    expense -
+    savingsIn +
+    savingsOut;
 
   /*
-   * =========================================================
-   * 8. UANG KELUAR
-   *
-   * Termasuk:
-   * - Semua EXPENSE
-   * - Pinjamkan uang ke orang
-   * - Bayar utang
-   *
-   * Catatan:
-   * Pinjamkan uang tetap merupakan uang keluar
-   * dari saldo, tetapi BUKAN expense untuk perhitungan
-   * total aset.
-   * =========================================================
+   * Net Cash Flow juga memperhitungkan
+   * perpindahan uang ke/dari tabungan.
    */
-
-  const expense = (transactions ?? [])
-    .filter((transaction) => {
-      if (
-        transaction.transaction_type ===
-        "EXPENSE"
-      ) {
-        return true;
-      }
-
-      if (
-        transaction.transaction_type ===
-          "LOAN" &&
-        transaction.category ===
-          "PINJAMKAN_UANG"
-      ) {
-        return true;
-      }
-
-      return false;
-    })
-    .reduce(
-      (sum, transaction) =>
-        sum + Number(transaction.amount),
-      0
-    );
-
-  /*
-   * =========================================================
-   * 9. TOTAL TABUNGAN
-   * =========================================================
-   */
-
-  const savingsTotal = (savings ?? [])
-    .reduce(
-      (sum, savingsItem) =>
-        sum +
-        Number(
-          savingsItem.current_amount
-        ),
-      0
-    );
-
-  /*
-   * =========================================================
-   * 10. UANG YANG MASIH DIPINJAM ORANG
-   * =========================================================
-   */
-
-  const loanOutstanding = (loans ?? [])
-    .reduce(
-      (sum, loan) =>
-        sum +
-        Number(loan.total_amount) -
-        Number(loan.returned_amount),
-      0
-    );
-
-  /*
-   * =========================================================
-   * 11. UTANG YANG MASIH HARUS DIBAYAR
-   * =========================================================
-   */
-
-  const debtOutstanding = (debts ?? [])
-    .reduce(
-      (sum, debt) =>
-        sum +
-        Number(debt.total_amount) -
-        Number(debt.paid_amount),
-      0
-    );
-
-  /*
-   * =========================================================
-   * 12. NET CASH FLOW
-   *
-   * Untuk cash flow:
-   *
-   * Uang masuk - uang keluar
-   *
-   * Pinjamkan uang dianggap uang keluar.
-   * Pinjam dari orang dianggap uang masuk.
-   * =========================================================
-   */
-
   const netCashFlow =
-    income - expense;
-
-  /*
-   * =========================================================
-   * 13. SALDO TERSEDIA
-   *
-   * INCOME
-   *              = +
-   *
-   * EXPENSE
-   *              = -
-   *
-   * TABUNGAN_MASUK
-   *              = -
-   *
-   * TABUNGAN_KELUAR
-   *              = +
-   *
-   * PINJAM_DARI_ORANG
-   *              = +
-   *
-   * PINJAMKAN_UANG
-   *              = -
-   *
-   * PENGEMBALIAN_PINJAMAN
-   *              = +
-   *
-   * BAYAR_UTANG
-   *              = -
-   * =========================================================
-   */
-
-  const available = (allTransactions ?? [])
-    .reduce(
-      (balance, transaction) => {
-        const amount =
-          Number(transaction.amount);
-
-        /*
-         * UANG MASUK
-         */
-
-        if (
-          transaction.transaction_type ===
-          "INCOME"
-        ) {
-          return balance + amount;
-        }
-
-        /*
-         * UANG KELUAR
-         */
-
-        if (
-          transaction.transaction_type ===
-          "EXPENSE"
-        ) {
-          return balance - amount;
-        }
-
-        /*
-         * TABUNGAN MASUK
-         *
-         * Uang berpindah dari saldo
-         * ke tabungan.
-         */
-
-        if (
-          transaction.transaction_type ===
-            "TRANSFER" &&
-          transaction.category ===
-            "TABUNGAN_MASUK"
-        ) {
-          return balance - amount;
-        }
-
-        /*
-         * TABUNGAN KELUAR
-         *
-         * Uang berpindah dari tabungan
-         * ke saldo.
-         */
-
-        if (
-          transaction.transaction_type ===
-            "TRANSFER" &&
-          transaction.category ===
-            "TABUNGAN_KELUAR"
-        ) {
-          return balance + amount;
-        }
-
-        /*
-         * KITA PINJAM UANG DARI ORANG
-         *
-         * Saldo bertambah.
-         */
-
-        if (
-          transaction.transaction_type ===
-            "INCOME" &&
-          transaction.category ===
-            "PINJAM_DARI_ORANG"
-        ) {
-          return balance + amount;
-        }
-
-        /*
-         * KITA PINJAMKAN UANG KE ORANG
-         *
-         * Saldo berkurang.
-         */
-
-        if (
-          transaction.transaction_type ===
-            "LOAN" &&
-          transaction.category ===
-            "PINJAMKAN_UANG"
-        ) {
-          return balance - amount;
-        }
-
-        /*
-         * ORANG MENGEMBALIKAN PINJAMAN
-         *
-         * Saldo bertambah.
-         */
-
-        if (
-          transaction.transaction_type ===
-            "LOAN" &&
-          transaction.category ===
-            "PENGEMBALIAN_PINJAMAN"
-        ) {
-          return balance + amount;
-        }
-
-        return balance;
-      },
-      0
-    );
-
-  /*
-   * =========================================================
-   * 14. TOTAL ASET
-   *
-   * Saldo tersedia
-   * + Tabungan
-   * + Uang dipinjam orang
-   *
-   * Pinjamkan uang:
-   *
-   * Saldo turun
-   * Piutang naik
-   * Total aset tetap.
-   * =========================================================
-   */
-
-  const assets =
-    available +
-    savingsTotal +
-    loanOutstanding;
-
-  /*
-   * =========================================================
-   * 15. RASIO PENGELUARAN
-   * =========================================================
-   */
+    available;
 
   const expenseRatio =
     income > 0
@@ -433,21 +160,13 @@ export async function getDashboard(month: string) {
       : 0;
 
   return {
-    transactions:
-      transactions ?? [],
-
     income,
     expense,
+    savingsIn,
+    savingsOut,
     netCashFlow,
-
     available,
-
-    savingsTotal,
-    loanOutstanding,
-    debtOutstanding,
-
-    assets,
-
-    expenseRatio
+    expenseRatio,
+    transactions: rows
   };
 }
