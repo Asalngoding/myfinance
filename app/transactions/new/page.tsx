@@ -1,14 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { rupiah } from "@/lib/format";
 
-type TransactionType =
-  | "INCOME"
-  | "EXPENSE"
-  | "TRANSFER";
+type TransactionType = "INCOME" | "EXPENSE" | "TRANSFER";
 
 type Category =
   | "GAJI"
@@ -24,78 +21,87 @@ type Category =
   | "TABUNGAN_MASUK"
   | "TABUNGAN_KELUAR";
 
-const incomeCategories = [
+type TransactionRow = {
+  transaction_type: string;
+  category: string;
+  amount: number | string;
+};
+
+const incomeCategories: {
+  value: Category;
+  label: string;
+}[] = [
   {
     value: "GAJI",
-    label: "Gaji"
+    label: "Gaji",
   },
   {
     value: "TRANSFER_ORANG",
-    label: "Transfer Orang"
+    label: "Transfer dari Orang",
   },
   {
     value: "PINJAM_DARI_ORANG",
-    label: "Pinjam dari Orang"
-  }
-] as const;
+    label: "Pinjam dari Orang",
+  },
+];
 
-const expenseCategories = [
+const expenseCategories: {
+  value: Category;
+  label: string;
+}[] = [
   {
     value: "BAYAR_UTANG",
-    label: "Bayar Utang"
+    label: "Bayar Utang",
   },
   {
     value: "BENSIN",
-    label: "Bensin"
+    label: "Bensin",
   },
   {
     value: "MAKAN_JAJAN",
-    label: "Makan & Jajan"
+    label: "Makan & Jajan",
   },
   {
     value: "SELF_REWARD",
-    label: "Self Reward"
+    label: "Self Reward",
   },
   {
     value: "LIBURAN",
-    label: "Liburan"
+    label: "Liburan",
   },
   {
     value: "SERVIS_MOTOR",
-    label: "Servis Motor"
+    label: "Servis Motor",
   },
   {
     value: "LAINNYA",
-    label: "Lainnya"
-  }
-] as const;
+    label: "Lainnya",
+  },
+];
 
-const savingCategories = [
+const transferCategories: {
+  value: Category;
+  label: string;
+}[] = [
   {
     value: "TABUNGAN_MASUK",
-    label: "Setor ke Tabungan"
+    label: "Setor Tabungan",
   },
   {
     value: "TABUNGAN_KELUAR",
-    label: "Ambil dari Tabungan"
-  }
-] as const;
+    label: "Ambil Tabungan",
+  },
+];
 
 function getLocalDateTime() {
   const now = new Date();
 
-  const offset =
-    now.getTimezoneOffset();
+  const offset = now.getTimezoneOffset();
+  const localDate = new Date(
+    now.getTime() - offset * 60 * 1000
+  );
 
-  const localTime =
-    new Date(
-      now.getTime() -
-        offset * 60 * 1000
-    );
-
-  return localTime
-    .toISOString()
-    .slice(0, 16);
+  return localDate.toISOString().slice(0, 16);
 }
 
 export default function NewTransactionPage() {
@@ -108,8 +114,7 @@ export default function NewTransactionPage() {
   const [category, setCategory] =
     useState<Category>("GAJI");
 
-  const [amount, setAmount] =
-    useState("");
+  const [amount, setAmount] = useState("");
 
   const [transactionDate, setTransactionDate] =
     useState(getLocalDateTime());
@@ -117,58 +122,63 @@ export default function NewTransactionPage() {
   const [description, setDescription] =
     useState("");
 
-  const [loading, setLoading] =
-    useState(false);
-
   const [errorMessage, setErrorMessage] =
     useState("");
 
-  function handleTypeChange(
-    type: TransactionType
-  ) {
-    setTransactionType(type);
-    setErrorMessage("");
+  const [successMessage, setSuccessMessage] =
+    useState("");
 
-    if (type === "INCOME") {
-      setCategory("GAJI");
-      return;
-    }
+  const [loading, setLoading] =
+    useState(false);
 
-    if (type === "EXPENSE") {
-      setCategory("BAYAR_UTANG");
-      return;
-    }
-
-    setCategory("TABUNGAN_MASUK");
-  }
-
-  function getCategories() {
+  useEffect(() => {
     if (transactionType === "INCOME") {
-      return incomeCategories;
+      setCategory("GAJI");
     }
 
     if (transactionType === "EXPENSE") {
-      return expenseCategories;
+      setCategory("BAYAR_UTANG");
     }
 
-    return savingCategories;
+    if (transactionType === "TRANSFER") {
+      setCategory("TABUNGAN_MASUK");
+    }
+
+    setErrorMessage("");
+  }, [transactionType]);
+
+  function formatAmountInput(value: string) {
+    const numericValue = value.replace(/\D/g, "");
+
+    if (!numericValue) {
+      return "";
+    }
+
+    return new Intl.NumberFormat("id-ID").format(
+      Number(numericValue)
+    );
+  }
+
+  function getNumericAmount() {
+    return Number(
+      amount.replace(/\./g, "").replace(/,/g, "")
+    );
   }
 
   async function getAvailableBalance() {
     const {
-      data: { user },
-      error: userError
+      data: {
+        user,
+      },
     } = await supabase.auth.getUser();
 
-    if (userError || !user) {
-      throw new Error(
-        "Sesi login tidak ditemukan."
-      );
+    if (!user) {
+      throw new Error("User belum login.");
     }
 
     const {
-      data: transactions,
-      error
+      data,
+      error,
     } = await supabase
       .from("transactions")
       .select(
@@ -177,57 +187,50 @@ export default function NewTransactionPage() {
       .eq("user_id", user.id);
 
     if (error) {
-      throw new Error(
-        "Gagal mengecek saldo: " +
-          error.message
-      );
+      throw error;
     }
+
+    const transactions =
+      (data as TransactionRow[]) || [];
 
     let totalIncome = 0;
     let totalExpense = 0;
     let totalSavingsIn = 0;
     let totalSavingsOut = 0;
 
-    for (const transaction of
-      transactions ?? []) {
-      const amount =
-        Number(transaction.amount);
+    transactions.forEach((transaction) => {
+      const transactionAmount = Number(
+        transaction.amount || 0
+      );
 
       if (
         transaction.transaction_type ===
         "INCOME"
       ) {
-        totalIncome += amount;
-        continue;
+        totalIncome += transactionAmount;
       }
 
       if (
         transaction.transaction_type ===
         "EXPENSE"
       ) {
-        totalExpense += amount;
-        continue;
+        totalExpense += transactionAmount;
       }
 
       if (
-        transaction.transaction_type ===
-          "TRANSFER" &&
         transaction.category ===
-          "TABUNGAN_MASUK"
+        "TABUNGAN_MASUK"
       ) {
-        totalSavingsIn += amount;
-        continue;
+        totalSavingsIn += transactionAmount;
       }
 
       if (
-        transaction.transaction_type ===
-          "TRANSFER" &&
         transaction.category ===
-          "TABUNGAN_KELUAR"
+        "TABUNGAN_KELUAR"
       ) {
-        totalSavingsOut += amount;
+        totalSavingsOut += transactionAmount;
       }
-    }
+    });
 
     return (
       totalIncome -
@@ -243,18 +246,12 @@ export default function NewTransactionPage() {
     event.preventDefault();
 
     setErrorMessage("");
+    setSuccessMessage("");
 
     const numericAmount =
-      Number(
-        amount
-          .replace(/\./g, "")
-          .replace(/,/g, "")
-      );
+      getNumericAmount();
 
-    if (
-      !numericAmount ||
-      numericAmount <= 0
-    ) {
+    if (!numericAmount || numericAmount <= 0) {
       setErrorMessage(
         "Nominal transaksi harus lebih dari 0."
       );
@@ -263,7 +260,7 @@ export default function NewTransactionPage() {
 
     if (!transactionDate) {
       setErrorMessage(
-        "Tanggal transaksi wajib diisi."
+        "Tanggal dan waktu transaksi wajib diisi."
       );
       return;
     }
@@ -272,27 +269,22 @@ export default function NewTransactionPage() {
 
     try {
       const {
-        data: { user },
-        error: userError
+        data: {
+          user,
+        },
       } = await supabase.auth.getUser();
 
-      if (userError || !user) {
-        router.push("/login");
+      if (!user) {
+        setErrorMessage(
+          "Sesi login tidak ditemukan. Silakan login kembali."
+        );
         return;
       }
 
       /*
-       * Validasi saldo hanya untuk
-       * transaksi Uang Keluar.
-       *
-       * Tabungan memiliki mekanisme
-       * validasi tersendiri di halaman
-       * Tabungan.
+       * Validasi saldo khusus untuk Uang Keluar.
        */
-      if (
-        transactionType ===
-        "EXPENSE"
-      ) {
+      if (transactionType === "EXPENSE") {
         const availableBalance =
           await getAvailableBalance();
 
@@ -301,359 +293,324 @@ export default function NewTransactionPage() {
           availableBalance
         ) {
           setErrorMessage(
-            `⚠️ Saldo tidak mencukupi. Saldo tersedia ${new Intl.NumberFormat(
-              "id-ID",
-              {
-                style: "currency",
-                currency: "IDR",
-                maximumFractionDigits: 0
-              }
-            ).format(
+            `⚠️ Saldo tidak mencukupi. Saldo tersedia ${rupiah(
               availableBalance
-            )}.`
+            )}`
           );
-
           return;
         }
       }
 
-      const transactionDateIso =
-        new Date(
-          transactionDate
-        ).toISOString();
-
-      const { error } =
-        await supabase
-          .from("transactions")
-          .insert({
-            user_id: user.id,
-            transaction_type:
-              transactionType,
-            category,
-            amount: numericAmount,
-            transaction_date:
-              transactionDateIso,
-            description:
-              description.trim() || null
-          });
+      /*
+       * Simpan transaksi.
+       */
+      const {
+        error,
+      } = await supabase
+        .from("transactions")
+        .insert({
+          user_id: user.id,
+          transaction_type:
+            transactionType,
+          category,
+          amount: numericAmount,
+          transaction_date:
+            new Date(
+              transactionDate
+            ).toISOString(),
+          description:
+            description.trim() || null,
+        });
 
       if (error) {
-        throw new Error(
-          error.message
-        );
+        throw error;
       }
 
-      router.push("/dashboard");
-      router.refresh();
+      /*
+       * Tampilkan popup berhasil.
+       */
+      setSuccessMessage(
+        "Transaksi berhasil disimpan."
+      );
 
+      /*
+       * Setelah popup tampil selama
+       * 1 detik, kembali ke Beranda.
+       */
+      setTimeout(() => {
+        router.replace("/dashboard");
+        router.refresh();
+      }, 1000);
     } catch (error) {
+      console.error(
+        "Gagal menyimpan transaksi:",
+        error
+      );
+
       setErrorMessage(
         error instanceof Error
           ? error.message
-          : "Gagal menyimpan transaksi."
+          : "Terjadi kesalahan saat menyimpan transaksi."
       );
     } finally {
       setLoading(false);
     }
   }
 
-  const categories =
-    getCategories();
+  const currentCategories =
+    transactionType === "INCOME"
+      ? incomeCategories
+      : transactionType === "EXPENSE"
+        ? expenseCategories
+        : transferCategories;
 
   return (
-    <main className="min-h-screen bg-slate-100">
-
-      <div className="mx-auto min-h-screen w-full max-w-md bg-gradient-to-b from-sky-400 via-sky-300 to-slate-50 pb-24">
-
-        {/* HEADER */}
-        <header className="px-5 pb-6 pt-6 text-white">
-
-          <div className="flex items-center gap-3">
-
-            <Link
-              href="/dashboard"
-              className="flex h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-white/15 text-xl backdrop-blur"
-            >
-              ←
-            </Link>
-
-            <div>
-              <p className="text-xs text-white/80">
-                MyFinance
-              </p>
-
-              <h1 className="text-xl font-extrabold">
-                Tambah Transaksi
-              </h1>
-            </div>
-
-          </div>
-
-        </header>
-
-        <div className="px-4">
-
-          <form
-            onSubmit={handleSubmit}
-            className="rounded-3xl bg-white p-5 shadow-[0_10px_30px_rgba(30,80,130,0.12)]"
+    <main className="min-h-screen bg-slate-50">
+      {/* Header */}
+      <div className="border-b border-slate-200 bg-white">
+        <div className="mx-auto flex max-w-md items-center gap-3 px-5 py-4">
+          <button
+            type="button"
+            onClick={() =>
+              router.push("/dashboard")
+            }
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-xl text-slate-700"
           >
+            ←
+          </button>
 
-            {/* JENIS TRANSAKSI */}
-            <div>
+          <div>
+            <h1 className="text-lg font-extrabold text-slate-800">
+              Tambah Transaksi
+            </h1>
 
-              <label className="text-xs font-bold text-slate-500">
-                Jenis Transaksi
-              </label>
-
-              <div className="mt-2 grid grid-cols-3 gap-2">
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleTypeChange(
-                      "INCOME"
-                    )
-                  }
-                  className={`rounded-2xl px-3 py-3 text-xs font-bold transition ${
-                    transactionType ===
-                    "INCOME"
-                      ? "bg-green-600 text-white shadow-md"
-                      : "bg-slate-100 text-slate-500"
-                  }`}
-                >
-                  Uang Masuk
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleTypeChange(
-                      "EXPENSE"
-                    )
-                  }
-                  className={`rounded-2xl px-3 py-3 text-xs font-bold transition ${
-                    transactionType ===
-                    "EXPENSE"
-                      ? "bg-red-500 text-white shadow-md"
-                      : "bg-slate-100 text-slate-500"
-                  }`}
-                >
-                  Uang Keluar
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleTypeChange(
-                      "TRANSFER"
-                    )
-                  }
-                  className={`rounded-2xl px-3 py-3 text-xs font-bold transition ${
-                    transactionType ===
-                    "TRANSFER"
-                      ? "bg-amber-500 text-white shadow-md"
-                      : "bg-slate-100 text-slate-500"
-                  }`}
-                >
-                  Tabungan
-                </button>
-
-              </div>
-
-            </div>
-
-            {/* KATEGORI */}
-            <div className="mt-5">
-
-              <label
-                htmlFor="category"
-                className="text-xs font-bold text-slate-500"
-              >
-                Kategori
-              </label>
-
-              <select
-                id="category"
-                value={category}
-                onChange={(event) =>
-                  setCategory(
-                    event.target
-                      .value as Category
-                  )
-                }
-                className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-              >
-                {categories.map(
-                  (item) => (
-                    <option
-                      key={item.value}
-                      value={item.value}
-                    >
-                      {item.label}
-                    </option>
-                  )
-                )}
-              </select>
-
-            </div>
-
-            {/* NOMINAL */}
-            <div className="mt-5">
-
-              <label
-                htmlFor="amount"
-                className="text-xs font-bold text-slate-500"
-              >
-                Nominal
-              </label>
-
-              <div className="mt-2 flex items-center rounded-2xl border border-slate-200 bg-white px-4 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-100">
-
-                <span className="text-sm font-bold text-slate-400">
-                  Rp
-                </span>
-
-                <input
-                  id="amount"
-                  type="text"
-                  inputMode="numeric"
-                  value={amount}
-                  onChange={(event) => {
-                    const value =
-                      event.target.value.replace(
-                        /[^0-9]/g,
-                        ""
-                      );
-
-                    setAmount(value);
-                  }}
-                  placeholder="0"
-                  className="w-full border-0 bg-transparent px-2 py-3 text-lg font-extrabold text-slate-800 outline-none"
-                />
-
-              </div>
-
-            </div>
-
-            {/* TANGGAL */}
-            <div className="mt-5">
-
-              <label
-                htmlFor="transactionDate"
-                className="text-xs font-bold text-slate-500"
-              >
-                Tanggal & Waktu
-              </label>
-
-              <input
-                id="transactionDate"
-                type="datetime-local"
-                value={transactionDate}
-                onChange={(event) =>
-                  setTransactionDate(
-                    event.target.value
-                  )
-                }
-                className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-              />
-
-            </div>
-
-            {/* KETERANGAN */}
-            <div className="mt-5">
-
-              <label
-                htmlFor="description"
-                className="text-xs font-bold text-slate-500"
-              >
-                Keterangan
-                <span className="ml-1 font-normal text-slate-400">
-                  (opsional)
-                </span>
-              </label>
-
-              <textarea
-                id="description"
-                value={description}
-                onChange={(event) =>
-                  setDescription(
-                    event.target.value
-                  )
-                }
-                placeholder="Contoh: Gaji bulan Oktober"
-                rows={3}
-                className="mt-2 w-full resize-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-              />
-
-            </div>
-
-            {/* ERROR */}
-            {errorMessage && (
-              <div className="mt-5 rounded-2xl border border-red-100 bg-red-50 p-3 text-xs font-semibold leading-relaxed text-red-600">
-                {errorMessage}
-              </div>
-            )}
-
-            {/* SUBMIT */}
-            <button
-              type="submit"
-              disabled={loading}
-              className="mt-6 w-full rounded-2xl bg-blue-600 px-4 py-4 text-sm font-extrabold text-white shadow-lg shadow-blue-200 transition-transform active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {loading
-                ? "Menyimpan..."
-                : "Simpan Transaksi"}
-            </button>
-
-          </form>
-
+            <p className="text-xs text-slate-500">
+              Catat pemasukan atau pengeluaran
+            </p>
+          </div>
         </div>
       </div>
 
-      {/* BOTTOM NAVIGATION */}
-      <nav className="fixed bottom-0 left-1/2 z-20 flex h-[76px] w-full max-w-md -translate-x-1/2 items-center justify-around border-t border-slate-100 bg-white/95 px-8 pb-[env(safe-area-inset-bottom)] pt-2 backdrop-blur-xl">
-
-        <Link
-          href="/dashboard"
-          className="flex w-20 flex-col items-center text-slate-500"
+      {/* Content */}
+      <div className="mx-auto max-w-md px-5 py-5">
+        <form
+          onSubmit={handleSubmit}
+          className="space-y-5"
         >
-          <span className="text-2xl">
-            ⌂
-          </span>
+          {/* Jenis transaksi */}
+          <section>
+            <label className="mb-2 block text-sm font-bold text-slate-700">
+              Jenis Transaksi
+            </label>
 
-          <span className="mt-0.5 text-[10px] font-bold">
-            Beranda
-          </span>
-        </Link>
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() =>
+                  setTransactionType(
+                    "INCOME"
+                  )
+                }
+                className={`rounded-2xl px-3 py-3 text-sm font-bold transition ${
+                  transactionType ===
+                  "INCOME"
+                    ? "bg-emerald-500 text-white shadow-md"
+                    : "bg-white text-slate-600 ring-1 ring-slate-200"
+                }`}
+              >
+                Uang Masuk
+              </button>
 
-        <Link
-          href="/transactions/new"
-          className="flex w-20 flex-col items-center text-blue-600"
-        >
-          <span className="mb-0.5 flex h-11 w-11 -translate-y-4 items-center justify-center rounded-2xl border-4 border-slate-50 bg-blue-600 text-2xl text-white shadow-lg shadow-blue-200">
-            ＋
-          </span>
+              <button
+                type="button"
+                onClick={() =>
+                  setTransactionType(
+                    "EXPENSE"
+                  )
+                }
+                className={`rounded-2xl px-3 py-3 text-sm font-bold transition ${
+                  transactionType ===
+                  "EXPENSE"
+                    ? "bg-red-500 text-white shadow-md"
+                    : "bg-white text-slate-600 ring-1 ring-slate-200"
+                }`}
+              >
+                Uang Keluar
+              </button>
 
-          <span className="-mt-3 text-[10px] font-bold">
-            Transaksi
-          </span>
-        </Link>
+              <button
+                type="button"
+                onClick={() =>
+                  setTransactionType(
+                    "TRANSFER"
+                  )
+                }
+                className={`rounded-2xl px-3 py-3 text-sm font-bold transition ${
+                  transactionType ===
+                  "TRANSFER"
+                    ? "bg-blue-500 text-white shadow-md"
+                    : "bg-white text-slate-600 ring-1 ring-slate-200"
+                }`}
+              >
+                Tabungan
+              </button>
+            </div>
+          </section>
 
-        <Link
-          href="/savings"
-          className="flex w-20 flex-col items-center text-slate-500"
-        >
-          <span className="text-2xl">
-            ▣
-          </span>
+          {/* Kategori */}
+          <section>
+            <label
+              htmlFor="category"
+              className="mb-2 block text-sm font-bold text-slate-700"
+            >
+              Kategori
+            </label>
 
-          <span className="mt-0.5 text-[10px] font-bold">
-            Tabungan
-          </span>
-        </Link>
+            <select
+              id="category"
+              value={category}
+              onChange={(event) =>
+                setCategory(
+                  event.target.value as Category
+                )
+              }
+              className="w-full rounded-2xl border-0 bg-white px-4 py-3.5 text-sm font-medium text-slate-700 shadow-sm ring-1 ring-slate-200 outline-none focus:ring-2 focus:ring-blue-400"
+            >
+              {currentCategories.map(
+                (item) => (
+                  <option
+                    key={item.value}
+                    value={item.value}
+                  >
+                    {item.label}
+                  </option>
+                )
+              )}
+            </select>
+          </section>
 
-      </nav>
+          {/* Nominal */}
+          <section>
+            <label
+              htmlFor="amount"
+              className="mb-2 block text-sm font-bold text-slate-700"
+            >
+              Nominal
+            </label>
 
+            <div className="relative">
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-400">
+                Rp
+              </span>
+
+              <input
+                id="amount"
+                type="text"
+                inputMode="numeric"
+                value={amount}
+                onChange={(event) =>
+                  setAmount(
+                    formatAmountInput(
+                      event.target.value
+                    )
+                  )
+                }
+                placeholder="0"
+                className="w-full rounded-2xl border-0 bg-white py-4 pl-12 pr-4 text-lg font-extrabold text-slate-800 shadow-sm ring-1 ring-slate-200 outline-none placeholder:text-slate-300 focus:ring-2 focus:ring-blue-400"
+              />
+            </div>
+          </section>
+
+          {/* Tanggal dan waktu */}
+          <section>
+            <label
+              htmlFor="transactionDate"
+              className="mb-2 block text-sm font-bold text-slate-700"
+            >
+              Tanggal & Waktu
+            </label>
+
+            <input
+              id="transactionDate"
+              type="datetime-local"
+              value={transactionDate}
+              onChange={(event) =>
+                setTransactionDate(
+                  event.target.value
+                )
+              }
+              className="w-full rounded-2xl border-0 bg-white px-4 py-3.5 text-sm font-medium text-slate-700 shadow-sm ring-1 ring-slate-200 outline-none focus:ring-2 focus:ring-blue-400"
+            />
+          </section>
+
+          {/* Keterangan */}
+          <section>
+            <label
+              htmlFor="description"
+              className="mb-2 block text-sm font-bold text-slate-700"
+            >
+              Keterangan
+              <span className="ml-1 font-normal text-slate-400">
+                (opsional)
+              </span>
+            </label>
+
+            <textarea
+              id="description"
+              value={description}
+              onChange={(event) =>
+                setDescription(
+                  event.target.value
+                )
+              }
+              placeholder="Contoh: Gaji bulan Oktober"
+              rows={3}
+              className="w-full resize-none rounded-2xl border-0 bg-white px-4 py-3.5 text-sm font-medium text-slate-700 shadow-sm ring-1 ring-slate-200 outline-none placeholder:text-slate-300 focus:ring-2 focus:ring-blue-400"
+            />
+          </section>
+
+          {/* Error */}
+          {errorMessage && (
+            <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-600 ring-1 ring-red-100">
+              {errorMessage}
+            </div>
+          )}
+
+          {/* Tombol simpan */}
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full rounded-2xl bg-slate-900 px-5 py-4 text-sm font-extrabold text-white shadow-lg transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {loading
+              ? "Menyimpan..."
+              : "Simpan Transaksi"}
+          </button>
+        </form>
+      </div>
+
+      {/* Popup berhasil */}
+      {successMessage && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 px-5 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-3xl bg-white p-6 text-center shadow-2xl">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-green-50 text-3xl font-extrabold text-green-600">
+              ✓
+            </div>
+
+            <h2 className="mt-4 text-lg font-extrabold text-slate-800">
+              Berhasil!
+            </h2>
+
+            <p className="mt-1 text-sm text-slate-500">
+              {successMessage}
+            </p>
+
+            <p className="mt-4 text-[11px] text-slate-400">
+              Mengalihkan ke Beranda...
+            </p>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
