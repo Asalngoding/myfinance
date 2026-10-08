@@ -17,6 +17,8 @@ type Saving = {
   description: string | null;
 };
 
+type ActionType = "SETOR" | "AMBIL";
+
 function rupiah(value: number) {
   return new Intl.NumberFormat("id-ID", {
     style: "currency",
@@ -63,7 +65,22 @@ export default function SavingsPage() {
   const [description, setDescription] =
     useState("");
 
-  async function loadSavings() {
+  const [actionSaving, setActionSaving] =
+    useState<Saving | null>(null);
+
+  const [actionType, setActionType] =
+    useState<ActionType>("SETOR");
+
+  const [actionAmount, setActionAmount] =
+    useState("");
+
+  const [actionLoading, setActionLoading] =
+    useState(false);
+
+  const [availableBalance, setAvailableBalance] =
+    useState(0);
+
+  async function loadData() {
     setLoading(true);
     setError("");
 
@@ -76,45 +93,120 @@ export default function SavingsPage() {
       return;
     }
 
-    const {
-      data,
-      error: fetchError
-    } = await supabase
-      .from("savings")
-      .select(
-        `
-          id,
-          name,
-          target_amount,
-          current_amount,
-          target_date,
-          description
-        `
-      )
-      .eq("user_id", user.id)
-      .order("created_at", {
-        ascending: false
-      });
+    const [
+      savingsResult,
+      transactionsResult
+    ] = await Promise.all([
+      supabase
+        .from("savings")
+        .select(
+          `
+            id,
+            name,
+            target_amount,
+            current_amount,
+            target_date,
+            description
+          `
+        )
+        .eq("user_id", user.id)
+        .order("created_at", {
+          ascending: false
+        }),
 
-    if (fetchError) {
+      supabase
+        .from("transactions")
+        .select(
+          `
+            transaction_type,
+            category,
+            amount
+          `
+        )
+        .eq("user_id", user.id)
+    ]);
+
+    if (savingsResult.error) {
       setError(
         "Gagal mengambil data tabungan: " +
-          fetchError.message
+          savingsResult.error.message
       );
 
       setLoading(false);
       return;
     }
 
+    if (transactionsResult.error) {
+      setError(
+        "Gagal mengambil data transaksi: " +
+          transactionsResult.error.message
+      );
+
+      setLoading(false);
+      return;
+    }
+
+    let income = 0;
+    let expense = 0;
+    let savingsIn = 0;
+    let savingsOut = 0;
+
+    for (
+      const transaction of
+      transactionsResult.data ?? []
+    ) {
+      const amount =
+        Number(transaction.amount);
+
+      if (
+        transaction.transaction_type ===
+        "INCOME"
+      ) {
+        income += amount;
+      }
+
+      if (
+        transaction.transaction_type ===
+        "EXPENSE"
+      ) {
+        expense += amount;
+      }
+
+      if (
+        transaction.transaction_type ===
+          "TRANSFER" &&
+        transaction.category ===
+          "TABUNGAN_MASUK"
+      ) {
+        savingsIn += amount;
+      }
+
+      if (
+        transaction.transaction_type ===
+          "TRANSFER" &&
+        transaction.category ===
+          "TABUNGAN_KELUAR"
+      ) {
+        savingsOut += amount;
+      }
+    }
+
+    setAvailableBalance(
+      income -
+        expense -
+        savingsIn +
+        savingsOut
+    );
+
     setSavings(
-      (data ?? []) as Saving[]
+      (savingsResult.data ?? []) as Saving[]
     );
 
     setLoading(false);
   }
 
   useEffect(() => {
-    loadSavings();
+    loadData();
   }, []);
 
   async function createSaving(
@@ -188,18 +280,190 @@ export default function SavingsPage() {
     setTargetDate("");
     setDescription("");
 
-    await loadSavings();
+    await loadData();
 
     setSaving(false);
   }
 
+  async function handleSavingAction(
+    e: FormEvent
+  ) {
+    e.preventDefault();
+
+    if (!actionSaving) {
+      return;
+    }
+
+    setError("");
+
+    const numericAmount =
+      Number(
+        actionAmount.replace(/\D/g, "")
+      );
+
+    if (
+      !numericAmount ||
+      numericAmount <= 0
+    ) {
+      setError(
+        "Nominal harus lebih dari 0."
+      );
+      return;
+    }
+
+    const currentAmount =
+      Number(
+        actionSaving.current_amount
+      );
+
+    if (
+      actionType === "SETOR" &&
+      numericAmount > availableBalance
+    ) {
+      setError(
+        "Nominal setor melebihi saldo tersedia."
+      );
+      return;
+    }
+
+    if (
+      actionType === "AMBIL" &&
+      numericAmount > currentAmount
+    ) {
+      setError(
+        "Nominal ambil melebihi saldo tabungan."
+      );
+      return;
+    }
+
+    setActionLoading(true);
+
+    const newAmount =
+      actionType === "SETOR"
+        ? currentAmount +
+          numericAmount
+        : currentAmount -
+          numericAmount;
+
+    const {
+      error: updateError
+    } = await supabase
+      .from("savings")
+      .update({
+        current_amount:
+          newAmount
+      })
+      .eq(
+        "id",
+        actionSaving.id
+      );
+
+    if (updateError) {
+      setError(
+        "Saldo tabungan gagal diperbarui: " +
+          updateError.message
+      );
+
+      setActionLoading(false);
+      return;
+    }
+
+    const transactionCategory =
+      actionType === "SETOR"
+        ? "TABUNGAN_MASUK"
+        : "TABUNGAN_KELUAR";
+
+    const {
+      data: { user }
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      await supabase
+        .from("savings")
+        .update({
+          current_amount:
+            currentAmount
+        })
+        .eq(
+          "id",
+          actionSaving.id
+        );
+
+      router.push("/login");
+      return;
+    }
+
+    const {
+      error: transactionError
+    } = await supabase
+      .from("transactions")
+      .insert({
+        user_id: user.id,
+        transaction_type:
+          "TRANSFER",
+        category:
+          transactionCategory,
+        amount:
+          numericAmount,
+        transaction_date:
+          new Date().toISOString(),
+        description:
+          `${
+            actionType ===
+            "SETOR"
+              ? "Setor"
+              : "Ambil"
+          } - ${actionSaving.name}`,
+        savings_id:
+          actionSaving.id
+      });
+
+    if (transactionError) {
+      await supabase
+        .from("savings")
+        .update({
+          current_amount:
+            currentAmount
+        })
+        .eq(
+          "id",
+          actionSaving.id
+        );
+
+      setError(
+        "Transaksi gagal disimpan: " +
+          transactionError.message
+      );
+
+      setActionLoading(false);
+      return;
+    }
+
+    setActionAmount("");
+    setActionSaving(null);
+
+    await loadData();
+
+    router.refresh();
+
+    setActionLoading(false);
+  }
+
   async function deleteSaving(
     savingId: string,
-    savingName: string
+    savingName: string,
+    currentAmount: number
   ) {
+    if (currentAmount > 0) {
+      setError(
+        "Tabungan yang masih memiliki saldo tidak dapat dihapus. Ambil seluruh saldo terlebih dahulu."
+      );
+      return;
+    }
+
     const confirmed =
       window.confirm(
-        `Hapus tabungan "${savingName}"?\n\nData tabungan akan dihapus.`
+        `Hapus tabungan "${savingName}"?`
       );
 
     if (!confirmed) {
@@ -220,7 +484,6 @@ export default function SavingsPage() {
         "Tabungan gagal dihapus: " +
           deleteError.message
       );
-
       return;
     }
 
@@ -232,6 +495,16 @@ export default function SavingsPage() {
     );
 
     router.refresh();
+  }
+
+  function openAction(
+    item: Saving,
+    type: ActionType
+  ) {
+    setError("");
+    setActionSaving(item);
+    setActionType(type);
+    setActionAmount("");
   }
 
   return (
@@ -266,7 +539,26 @@ export default function SavingsPage() {
 
         <section className="space-y-4 px-4 py-5">
 
-          {/* FORM TAMBAH TABUNGAN */}
+          {/* SALDO TERSEDIA */}
+          <div className="rounded-2xl bg-slate-900 p-5 text-white shadow-sm">
+
+            <p className="text-sm text-slate-300">
+              Saldo Tersedia
+            </p>
+
+            <p className="mt-1 text-2xl font-bold">
+              {rupiah(
+                availableBalance
+              )}
+            </p>
+
+            <p className="mt-2 text-xs text-slate-400">
+              Saldo yang dapat digunakan untuk setor tabungan.
+            </p>
+
+          </div>
+
+          {/* FORM BUAT TABUNGAN */}
           <div className="rounded-2xl bg-white p-5 shadow-sm">
 
             <h2 className="font-semibold text-slate-900">
@@ -282,7 +574,6 @@ export default function SavingsPage() {
               className="mt-4 space-y-4"
             >
 
-              {/* NAMA */}
               <div>
 
                 <label className="mb-2 block text-sm font-semibold">
@@ -304,7 +595,6 @@ export default function SavingsPage() {
 
               </div>
 
-              {/* TARGET */}
               <div>
 
                 <label className="mb-2 block text-sm font-semibold">
@@ -330,7 +620,6 @@ export default function SavingsPage() {
 
               </div>
 
-              {/* TARGET DATE */}
               <div>
 
                 <label className="mb-2 block text-sm font-semibold">
@@ -350,7 +639,6 @@ export default function SavingsPage() {
 
               </div>
 
-              {/* DESCRIPTION */}
               <div>
 
                 <label className="mb-2 block text-sm font-semibold">
@@ -372,13 +660,10 @@ export default function SavingsPage() {
               </div>
 
               <div className="rounded-xl bg-blue-50 p-3 text-xs leading-5 text-blue-700">
-                Membuat tujuan tabungan belum
-                mengurangi saldo. Saldo baru
-                berkurang ketika kamu melakukan
-                transaksi <strong>Masuk ke Tabungan</strong>.
+                Membuat tujuan tabungan belum mengurangi saldo. Saldo baru berkurang ketika kamu melakukan transaksi <strong>Setor</strong>.
               </div>
 
-              {error && (
+              {error && !actionSaving && (
                 <div className="rounded-xl bg-red-50 p-3 text-sm text-red-600">
                   {error}
                 </div>
@@ -498,7 +783,8 @@ export default function SavingsPage() {
                           onClick={() =>
                             deleteSaving(
                               item.id,
-                              item.name
+                              item.name,
+                              current
                             )
                           }
                           className="shrink-0 text-xs font-semibold text-red-500"
@@ -508,7 +794,6 @@ export default function SavingsPage() {
 
                       </div>
 
-                      {/* NOMINAL */}
                       <div className="mt-4 flex items-end justify-between">
 
                         <div>
@@ -518,7 +803,9 @@ export default function SavingsPage() {
                           </p>
 
                           <p className="mt-1 text-lg font-bold text-slate-900">
-                            {rupiah(current)}
+                            {rupiah(
+                              current
+                            )}
                           </p>
 
                         </div>
@@ -530,14 +817,15 @@ export default function SavingsPage() {
                           </p>
 
                           <p className="mt-1 text-sm font-semibold text-slate-700">
-                            {rupiah(target)}
+                            {rupiah(
+                              target
+                            )}
                           </p>
 
                         </div>
 
                       </div>
 
-                      {/* PROGRESS */}
                       <div className="mt-3">
 
                         <div className="h-2 overflow-hidden rounded-full bg-slate-200">
@@ -574,7 +862,6 @@ export default function SavingsPage() {
 
                       </div>
 
-                      {/* TARGET DATE */}
                       {item.target_date && (
                         <p className="mt-3 text-xs text-slate-500">
                           Target:{" "}
@@ -584,18 +871,39 @@ export default function SavingsPage() {
                         </p>
                       )}
 
-                      {/* AKSI */}
-                      <button
-                        type="button"
-                        onClick={() =>
-                          router.push(
-                            "/transactions/new"
-                          )
-                        }
-                        className="mt-4 w-full rounded-xl bg-white px-4 py-3 text-sm font-semibold text-slate-900 shadow-sm"
-                      >
-                        + Masuk ke Tabungan
-                      </button>
+                      {/* TOMBOL SETOR / AMBIL */}
+                      <div className="mt-4 grid grid-cols-2 gap-2">
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            openAction(
+                              item,
+                              "SETOR"
+                            )
+                          }
+                          className="rounded-xl bg-slate-900 px-3 py-3 text-sm font-semibold text-white"
+                        >
+                          + Setor
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            openAction(
+                              item,
+                              "AMBIL"
+                            )
+                          }
+                          disabled={
+                            current <= 0
+                          }
+                          className="rounded-xl bg-white px-3 py-3 text-sm font-semibold text-slate-900 shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          − Ambil
+                        </button>
+
+                      </div>
 
                     </div>
                   );
@@ -611,6 +919,147 @@ export default function SavingsPage() {
         </section>
 
       </div>
+
+      {/* MODAL SETOR / AMBIL */}
+      {actionSaving && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 px-4 pb-4">
+
+          <div className="w-full max-w-md rounded-3xl bg-white p-5 shadow-xl">
+
+            <div className="flex items-start justify-between">
+
+              <div>
+
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                  {actionType ===
+                  "SETOR"
+                    ? "Setor Tabungan"
+                    : "Ambil Tabungan"}
+                </p>
+
+                <h2 className="mt-1 text-xl font-bold text-slate-900">
+                  {actionSaving.name}
+                </h2>
+
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setActionSaving(
+                    null
+                  );
+                  setActionAmount("");
+                  setError("");
+                }}
+                className="text-xl text-slate-400"
+              >
+                ×
+              </button>
+
+            </div>
+
+            <div className="mt-4 rounded-xl bg-slate-50 p-4">
+
+              <div className="flex justify-between text-sm">
+
+                <span className="text-slate-500">
+                  Saldo tabungan
+                </span>
+
+                <span className="font-semibold text-slate-900">
+                  {rupiah(
+                    Number(
+                      actionSaving.current_amount
+                    )
+                  )}
+                </span>
+
+              </div>
+
+              {actionType ===
+                "SETOR" && (
+                <div className="mt-2 flex justify-between text-sm">
+
+                  <span className="text-slate-500">
+                    Saldo tersedia
+                  </span>
+
+                  <span className="font-semibold text-slate-900">
+                    {rupiah(
+                      availableBalance
+                    )}
+                  </span>
+
+                </div>
+              )}
+
+            </div>
+
+            <form
+              onSubmit={
+                handleSavingAction
+              }
+              className="mt-4 space-y-4"
+            >
+
+              <div>
+
+                <label className="mb-2 block text-sm font-semibold">
+                  Nominal{" "}
+                  {actionType ===
+                  "SETOR"
+                    ? "Setor"
+                    : "Ambil"}
+                </label>
+
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  autoFocus
+                  value={actionAmount}
+                  onChange={(e) =>
+                    setActionAmount(
+                      e.target.value.replace(
+                        /\D/g,
+                        ""
+                      )
+                    )
+                  }
+                  placeholder="Contoh: 100000"
+                  className="w-full rounded-xl border-0 bg-slate-50 px-4 py-3 text-lg font-semibold shadow-sm"
+                  required
+                />
+
+              </div>
+
+              {error && (
+                <div className="rounded-xl bg-red-50 p-3 text-sm text-red-600">
+                  {error}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={
+                  actionLoading
+                }
+                className="w-full rounded-xl bg-slate-900 px-4 py-3 font-semibold text-white disabled:opacity-50"
+              >
+                {actionLoading
+                  ? "Memproses..."
+                  : actionType ===
+                    "SETOR"
+                  ? "Konfirmasi Setor"
+                  : "Konfirmasi Ambil"}
+              </button>
+
+            </form>
+
+          </div>
+
+        </div>
+      )}
 
     </main>
   );
