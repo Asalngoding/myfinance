@@ -1,10 +1,14 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import {
+  FormEvent,
+  useEffect,
+  useState
+} from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
-type Savings = {
+type Saving = {
   id: string;
   name: string;
   target_amount: number;
@@ -12,8 +16,6 @@ type Savings = {
   target_date: string | null;
   description: string | null;
 };
-
-type ModalType = "deposit" | "withdraw" | null;
 
 function rupiah(value: number) {
   return new Intl.NumberFormat("id-ID", {
@@ -23,28 +25,14 @@ function rupiah(value: number) {
   }).format(value);
 }
 
-function getLocalDateTime() {
-  const now = new Date();
-
-  const year = now.getFullYear();
-
-  const month = String(
-    now.getMonth() + 1
-  ).padStart(2, "0");
-
-  const day = String(
-    now.getDate()
-  ).padStart(2, "0");
-
-  const hours = String(
-    now.getHours()
-  ).padStart(2, "0");
-
-  const minutes = String(
-    now.getMinutes()
-  ).padStart(2, "0");
-
-  return `${year}-${month}-${day}T${hours}:${minutes}`;
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat("id-ID", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric"
+  }).format(
+    new Date(`${value}T00:00:00`)
+  );
 }
 
 export default function SavingsPage() {
@@ -52,13 +40,16 @@ export default function SavingsPage() {
   const supabase = createClient();
 
   const [savings, setSavings] =
-    useState<Savings[]>([]);
+    useState<Saving[]>([]);
 
   const [loading, setLoading] =
     useState(true);
 
   const [saving, setSaving] =
     useState(false);
+
+  const [error, setError] =
+    useState("");
 
   const [name, setName] =
     useState("");
@@ -70,21 +61,6 @@ export default function SavingsPage() {
     useState("");
 
   const [description, setDescription] =
-    useState("");
-
-  const [error, setError] =
-    useState("");
-
-  const [modalType, setModalType] =
-    useState<ModalType>(null);
-
-  const [selectedSavings, setSelectedSavings] =
-    useState<Savings | null>(null);
-
-  const [transactionAmount, setTransactionAmount] =
-    useState("");
-
-  const [transactionDescription, setTransactionDescription] =
     useState("");
 
   async function loadSavings() {
@@ -105,7 +81,16 @@ export default function SavingsPage() {
       error: fetchError
     } = await supabase
       .from("savings")
-      .select("*")
+      .select(
+        `
+          id,
+          name,
+          target_amount,
+          current_amount,
+          target_date,
+          description
+        `
+      )
       .eq("user_id", user.id)
       .order("created_at", {
         ascending: false
@@ -121,7 +106,10 @@ export default function SavingsPage() {
       return;
     }
 
-    setSavings(data ?? []);
+    setSavings(
+      (data ?? []) as Saving[]
+    );
+
     setLoading(false);
   }
 
@@ -129,7 +117,7 @@ export default function SavingsPage() {
     loadSavings();
   }, []);
 
-  async function createSavings(
+  async function createSaving(
     e: FormEvent
   ) {
     e.preventDefault();
@@ -176,7 +164,8 @@ export default function SavingsPage() {
       .insert({
         user_id: user.id,
         name: name.trim(),
-        target_amount: numericTarget,
+        target_amount:
+          numericTarget,
         current_amount: 0,
         target_date:
           targetDate || null,
@@ -204,201 +193,50 @@ export default function SavingsPage() {
     setSaving(false);
   }
 
-  function openTransactionModal(
-    type: ModalType,
-    item: Savings
+  async function deleteSaving(
+    savingId: string,
+    savingName: string
   ) {
-    setError("");
-    setSelectedSavings(item);
-    setModalType(type);
-    setTransactionAmount("");
-    setTransactionDescription("");
-  }
+    const confirmed =
+      window.confirm(
+        `Hapus tabungan "${savingName}"?\n\nData tabungan akan dihapus.`
+      );
 
-  function closeTransactionModal() {
-    if (saving) {
-      return;
-    }
-
-    setModalType(null);
-    setSelectedSavings(null);
-    setTransactionAmount("");
-    setTransactionDescription("");
-  }
-
-  async function submitSavingsTransaction(
-    e: FormEvent
-  ) {
-    e.preventDefault();
-
-    if (
-      !selectedSavings ||
-      !modalType
-    ) {
+    if (!confirmed) {
       return;
     }
 
     setError("");
 
-    const numericAmount =
-      Number(
-        transactionAmount.replace(
-          /\D/g,
-          ""
-        )
-      );
-
-    if (
-      !numericAmount ||
-      numericAmount <= 0
-    ) {
-      setError(
-        "Nominal harus lebih dari 0."
-      );
-      return;
-    }
-
-    if (
-      modalType === "withdraw" &&
-      numericAmount >
-        Number(
-          selectedSavings.current_amount
-        )
-    ) {
-      setError(
-        "Nominal pengambilan melebihi saldo tabungan."
-      );
-      return;
-    }
-
-    setSaving(true);
-
     const {
-      data: { user }
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      router.push("/login");
-      return;
-    }
-
-    const newAmount =
-      modalType === "deposit"
-        ? Number(
-            selectedSavings.current_amount
-          ) + numericAmount
-        : Number(
-            selectedSavings.current_amount
-          ) - numericAmount;
-
-    /*
-     * 1. Update saldo tabungan
-     */
-    const {
-      error: updateError
+      error: deleteError
     } = await supabase
       .from("savings")
-      .update({
-        current_amount: newAmount
-      })
-      .eq("id", selectedSavings.id)
-      .eq("user_id", user.id);
+      .delete()
+      .eq("id", savingId);
 
-    if (updateError) {
+    if (deleteError) {
       setError(
-        "Saldo tabungan gagal diperbarui: " +
-          updateError.message
+        "Tabungan gagal dihapus: " +
+          deleteError.message
       );
 
-      setSaving(false);
       return;
     }
 
-    /*
-     * 2. Catat transaksi
-     *
-     * Setor:
-     * TABUNGAN_MASUK
-     *
-     * Ambil:
-     * TABUNGAN_KELUAR
-     */
-    const category =
-      modalType === "deposit"
-        ? "TABUNGAN_MASUK"
-        : "TABUNGAN_KELUAR";
-
-    const {
-      error: transactionError
-    } = await supabase
-      .from("transactions")
-      .insert({
-        user_id: user.id,
-        transaction_type: "TRANSFER",
-        category,
-        amount: numericAmount,
-        transaction_date:
-          new Date().toISOString(),
-        description:
-          transactionDescription.trim() ||
-          (
-            modalType === "deposit"
-              ? `Setor ke ${selectedSavings.name}`
-              : `Ambil dari ${selectedSavings.name}`
-          ),
-        savings_id:
-          selectedSavings.id
-      });
-
-    if (transactionError) {
-      /*
-       * Jika pencatatan transaksi gagal,
-       * kembalikan saldo tabungan ke kondisi
-       * sebelumnya.
-       */
-      await supabase
-        .from("savings")
-        .update({
-          current_amount:
-            selectedSavings.current_amount
-        })
-        .eq("id", selectedSavings.id)
-        .eq("user_id", user.id);
-
-      setError(
-        "Transaksi gagal disimpan: " +
-          transactionError.message
-      );
-
-      setSaving(false);
-      return;
-    }
-
-    closeTransactionModal();
-
-    await loadSavings();
+    setSavings((current) =>
+      current.filter(
+        (item) =>
+          item.id !== savingId
+      )
+    );
 
     router.refresh();
-
-    setSaving(false);
-  }
-
-  function calculateProgress(
-    current: number,
-    target: number
-  ) {
-    if (target <= 0) {
-      return 0;
-    }
-
-    return Math.min(
-      (current / target) * 100,
-      100
-    );
   }
 
   return (
     <main className="min-h-screen bg-slate-50">
+
       <div className="mx-auto min-h-screen w-full max-w-md bg-slate-50 pb-8">
 
         {/* HEADER */}
@@ -407,7 +245,9 @@ export default function SavingsPage() {
           <button
             type="button"
             onClick={() =>
-              router.push("/dashboard")
+              router.push(
+                "/dashboard"
+              )
             }
             className="text-sm text-slate-300"
           >
@@ -419,34 +259,32 @@ export default function SavingsPage() {
           </h1>
 
           <p className="mt-1 text-sm text-slate-300">
-            Kelola target dan perkembangan
-            tabunganmu.
+            Pisahkan uang untuk tujuan yang ingin kamu capai.
           </p>
 
         </header>
 
-        {/* CONTENT */}
         <section className="space-y-4 px-4 py-5">
 
-          {/* BUAT TABUNGAN */}
+          {/* FORM TAMBAH TABUNGAN */}
           <div className="rounded-2xl bg-white p-5 shadow-sm">
 
             <h2 className="font-semibold text-slate-900">
-              Buat Tabungan Baru
+              Buat Tabungan
             </h2>
 
             <p className="mt-1 text-xs text-slate-500">
-              Contoh: Dana Darurat, Beli Motor,
-              Liburan, atau Gadget.
+              Buat tujuan tabungan terlebih dahulu.
             </p>
 
             <form
-              onSubmit={createSavings}
+              onSubmit={createSaving}
               className="mt-4 space-y-4"
             >
 
               {/* NAMA */}
               <div>
+
                 <label className="mb-2 block text-sm font-semibold">
                   Nama Tabungan
                 </label>
@@ -455,18 +293,22 @@ export default function SavingsPage() {
                   type="text"
                   value={name}
                   onChange={(e) =>
-                    setName(e.target.value)
+                    setName(
+                      e.target.value
+                    )
                   }
                   placeholder="Contoh: Dana Darurat"
                   className="w-full rounded-xl border-0 bg-slate-50 px-4 py-3 shadow-sm"
                   required
                 />
+
               </div>
 
               {/* TARGET */}
               <div>
+
                 <label className="mb-2 block text-sm font-semibold">
-                  Target Nominal
+                  Target Tabungan
                 </label>
 
                 <input
@@ -485,10 +327,12 @@ export default function SavingsPage() {
                   className="w-full rounded-xl border-0 bg-slate-50 px-4 py-3 shadow-sm"
                   required
                 />
+
               </div>
 
               {/* TARGET DATE */}
               <div>
+
                 <label className="mb-2 block text-sm font-semibold">
                   Target Tanggal
                 </label>
@@ -503,10 +347,12 @@ export default function SavingsPage() {
                   }
                   className="w-full rounded-xl border-0 bg-slate-50 px-4 py-3 shadow-sm"
                 />
+
               </div>
 
-              {/* KETERANGAN */}
+              {/* DESCRIPTION */}
               <div>
+
                 <label className="mb-2 block text-sm font-semibold">
                   Keterangan
                 </label>
@@ -518,20 +364,26 @@ export default function SavingsPage() {
                       e.target.value
                     )
                   }
-                  placeholder="Keterangan tambahan"
-                  rows={2}
+                  placeholder="Contoh: Dana darurat 6 bulan"
+                  rows={3}
                   className="w-full resize-none rounded-xl border-0 bg-slate-50 px-4 py-3 shadow-sm"
                 />
+
               </div>
 
-              {/* ERROR */}
-              {error && !modalType && (
+              <div className="rounded-xl bg-blue-50 p-3 text-xs leading-5 text-blue-700">
+                Membuat tujuan tabungan belum
+                mengurangi saldo. Saldo baru
+                berkurang ketika kamu melakukan
+                transaksi <strong>Masuk ke Tabungan</strong>.
+              </div>
+
+              {error && (
                 <div className="rounded-xl bg-red-50 p-3 text-sm text-red-600">
                   {error}
                 </div>
               )}
 
-              {/* SUBMIT */}
               <button
                 type="submit"
                 disabled={saving}
@@ -543,6 +395,7 @@ export default function SavingsPage() {
               </button>
 
             </form>
+
           </div>
 
           {/* DAFTAR TABUNGAN */}
@@ -551,13 +404,15 @@ export default function SavingsPage() {
             <div className="flex items-center justify-between">
 
               <div>
+
                 <h2 className="font-semibold text-slate-900">
                   Tabungan Saya
                 </h2>
 
                 <p className="mt-1 text-xs text-slate-500">
-                  Target tabungan yang sedang berjalan.
+                  Tujuan tabungan yang sudah dibuat.
                 </p>
+
               </div>
 
               <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
@@ -569,12 +424,17 @@ export default function SavingsPage() {
             <div className="mt-4 space-y-4">
 
               {loading ? (
+
                 <div className="rounded-xl bg-slate-50 p-4 text-center">
+
                   <p className="text-sm text-slate-500">
-                    Memuat tabungan...
+                    Memuat data tabungan...
                   </p>
+
                 </div>
+
               ) : savings.length === 0 ? (
+
                 <div className="rounded-xl bg-slate-50 p-4 text-center">
 
                   <p className="text-sm text-slate-500">
@@ -582,29 +442,34 @@ export default function SavingsPage() {
                   </p>
 
                   <p className="mt-1 text-xs text-slate-400">
-                    Buat target tabungan pertamamu
-                    di atas.
+                    Buat tujuan tabungan menggunakan form di atas.
                   </p>
 
                 </div>
-              ) : (
-                savings.map((item) => {
 
-                  const current =
-                    Number(
-                      item.current_amount
-                    );
+              ) : (
+
+                savings.map((item) => {
 
                   const target =
                     Number(
                       item.target_amount
                     );
 
-                  const progress =
-                    calculateProgress(
-                      current,
-                      target
+                  const current =
+                    Number(
+                      item.current_amount
                     );
+
+                  const percentage =
+                    target > 0
+                      ? Math.min(
+                          (current /
+                            target) *
+                            100,
+                          100
+                        )
+                      : 0;
 
                   return (
                     <div
@@ -612,10 +477,10 @@ export default function SavingsPage() {
                       className="rounded-2xl bg-slate-50 p-4"
                     >
 
-                      {/* NAMA + PROGRESS */}
                       <div className="flex items-start justify-between gap-3">
 
-                        <div>
+                        <div className="min-w-0">
+
                           <h3 className="font-semibold text-slate-900">
                             {item.name}
                           </h3>
@@ -625,11 +490,21 @@ export default function SavingsPage() {
                               {item.description}
                             </p>
                           )}
+
                         </div>
 
-                        <p className="shrink-0 text-sm font-bold text-slate-900">
-                          {progress.toFixed(0)}%
-                        </p>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            deleteSaving(
+                              item.id,
+                              item.name
+                            )
+                          }
+                          className="shrink-0 text-xs font-semibold text-red-500"
+                        >
+                          Hapus
+                        </button>
 
                       </div>
 
@@ -637,6 +512,7 @@ export default function SavingsPage() {
                       <div className="mt-4 flex items-end justify-between">
 
                         <div>
+
                           <p className="text-xs text-slate-500">
                             Terkumpul
                           </p>
@@ -644,9 +520,11 @@ export default function SavingsPage() {
                           <p className="mt-1 text-lg font-bold text-slate-900">
                             {rupiah(current)}
                           </p>
+
                         </div>
 
                         <div className="text-right">
+
                           <p className="text-xs text-slate-500">
                             Target
                           </p>
@@ -654,221 +532,86 @@ export default function SavingsPage() {
                           <p className="mt-1 text-sm font-semibold text-slate-700">
                             {rupiah(target)}
                           </p>
+
                         </div>
 
                       </div>
 
-                      {/* PROGRESS BAR */}
-                      <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200">
+                      {/* PROGRESS */}
+                      <div className="mt-3">
 
-                        <div
-                          className="h-full rounded-full bg-slate-900"
-                          style={{
-                            width: `${progress}%`
-                          }}
-                        />
+                        <div className="h-2 overflow-hidden rounded-full bg-slate-200">
+
+                          <div
+                            className="h-full rounded-full bg-slate-900"
+                            style={{
+                              width: `${percentage}%`
+                            }}
+                          />
+
+                        </div>
+
+                        <div className="mt-2 flex justify-between text-xs">
+
+                          <span className="text-slate-500">
+                            {percentage.toFixed(
+                              0
+                            )}% tercapai
+                          </span>
+
+                          <span className="font-semibold text-slate-700">
+                            {rupiah(
+                              Math.max(
+                                target -
+                                  current,
+                                0
+                              )
+                            )}{" "}
+                            lagi
+                          </span>
+
+                        </div>
 
                       </div>
 
                       {/* TARGET DATE */}
                       {item.target_date && (
-                        <p className="mt-2 text-xs text-slate-500">
+                        <p className="mt-3 text-xs text-slate-500">
                           Target:{" "}
-                          {new Intl.DateTimeFormat(
-                            "id-ID",
-                            {
-                              day: "2-digit",
-                              month: "short",
-                              year: "numeric"
-                            }
-                          ).format(
-                            new Date(
-                              `${item.target_date}T00:00:00`
-                            )
+                          {formatDate(
+                            item.target_date
                           )}
                         </p>
                       )}
 
-                      {/* ACTION */}
-                      <div className="mt-4 grid grid-cols-2 gap-2">
-
-                        <button
-                          type="button"
-                          onClick={() =>
-                            openTransactionModal(
-                              "deposit",
-                              item
-                            )
-                          }
-                          className="rounded-xl bg-slate-900 px-3 py-3 text-sm font-semibold text-white"
-                        >
-                          + Setor
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() =>
-                            openTransactionModal(
-                              "withdraw",
-                              item
-                            )
-                          }
-                          className="rounded-xl bg-white px-3 py-3 text-sm font-semibold text-slate-700 shadow-sm"
-                        >
-                          − Ambil
-                        </button>
-
-                      </div>
+                      {/* AKSI */}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          router.push(
+                            "/transactions/new"
+                          )
+                        }
+                        className="mt-4 w-full rounded-xl bg-white px-4 py-3 text-sm font-semibold text-slate-900 shadow-sm"
+                      >
+                        + Masuk ke Tabungan
+                      </button>
 
                     </div>
                   );
+
                 })
+
               )}
 
             </div>
+
           </div>
 
         </section>
 
-        {/* MODAL SETOR / AMBIL */}
-        {modalType && selectedSavings && (
-          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4">
-
-            <div className="w-full max-w-md rounded-t-3xl bg-white p-5 sm:rounded-3xl">
-
-              {/* MODAL HEADER */}
-              <div className="flex items-start justify-between">
-
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                    {modalType === "deposit"
-                      ? "Setor Tabungan"
-                      : "Ambil Tabungan"}
-                  </p>
-
-                  <h2 className="mt-1 text-xl font-bold text-slate-900">
-                    {selectedSavings.name}
-                  </h2>
-
-                  <p className="mt-1 text-sm text-slate-500">
-                    Saldo saat ini:{" "}
-                    <span className="font-semibold text-slate-700">
-                      {rupiah(
-                        Number(
-                          selectedSavings.current_amount
-                        )
-                      )}
-                    </span>
-                  </p>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={
-                    closeTransactionModal
-                  }
-                  disabled={saving}
-                  className="rounded-full bg-slate-100 px-3 py-2 text-slate-600"
-                >
-                  ✕
-                </button>
-
-              </div>
-
-              {/* FORM MODAL */}
-              <form
-                onSubmit={
-                  submitSavingsTransaction
-                }
-                className="mt-5 space-y-4"
-              >
-
-                {/* NOMINAL */}
-                <div>
-                  <label className="mb-2 block text-sm font-semibold">
-                    Nominal
-                  </label>
-
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    value={
-                      transactionAmount
-                    }
-                    onChange={(e) =>
-                      setTransactionAmount(
-                        e.target.value.replace(
-                          /\D/g,
-                          ""
-                        )
-                      )
-                    }
-                    placeholder="Contoh: 500000"
-                    className="w-full rounded-xl border-0 bg-slate-50 px-4 py-3 shadow-sm"
-                    required
-                  />
-                </div>
-
-                {/* KETERANGAN */}
-                <div>
-                  <label className="mb-2 block text-sm font-semibold">
-                    Keterangan
-                  </label>
-
-                  <textarea
-                    value={
-                      transactionDescription
-                    }
-                    onChange={(e) =>
-                      setTransactionDescription(
-                        e.target.value
-                      )
-                    }
-                    placeholder={
-                      modalType === "deposit"
-                        ? "Contoh: Setoran tabungan bulan Oktober"
-                        : "Contoh: Ambil untuk kebutuhan tertentu"
-                    }
-                    rows={3}
-                    className="w-full resize-none rounded-xl border-0 bg-slate-50 px-4 py-3 shadow-sm"
-                  />
-                </div>
-
-                {/* INFO */}
-                <div className="rounded-xl bg-slate-50 p-3 text-xs leading-5 text-slate-500">
-                  {modalType === "deposit"
-                    ? "Setoran akan mengurangi saldo tersedia, tetapi tidak dihitung sebagai pengeluaran."
-                    : "Pengambilan akan menambah saldo tersedia, tetapi tidak dihitung sebagai pemasukan."}
-                </div>
-
-                {/* ERROR */}
-                {error && (
-                  <div className="rounded-xl bg-red-50 p-3 text-sm text-red-600">
-                    {error}
-                  </div>
-                )}
-
-                {/* BUTTON */}
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="w-full rounded-xl bg-slate-900 px-4 py-3 font-semibold text-white disabled:opacity-50"
-                >
-                  {saving
-                    ? "Menyimpan..."
-                    : modalType ===
-                      "deposit"
-                    ? "Simpan Setoran"
-                    : "Simpan Pengambilan"}
-                </button>
-
-              </form>
-
-            </div>
-          </div>
-        )}
-
       </div>
+
     </main>
   );
 }
