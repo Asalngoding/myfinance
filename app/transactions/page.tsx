@@ -1,31 +1,25 @@
 "use client";
 
-import {
-  useEffect,
-  useState
-} from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { rupiah, dateIndonesia } from "@/lib/format";
 
 type Transaction = {
   id: string;
-  transaction_type:
-    | "INCOME"
-    | "EXPENSE"
-    | "TRANSFER"
-    | "LOAN";
+  transaction_type: string;
   category: string;
   amount: number;
   transaction_date: string;
   description: string | null;
+  savings_id: string | null;
 };
 
 const categoryLabels: Record<string, string> = {
   GAJI: "Gaji",
   TRANSFER_ORANG: "Transfer Orang",
   PINJAM_DARI_ORANG: "Pinjam dari Orang",
-
   BAYAR_UTANG: "Bayar Utang",
   BENSIN: "Bensin",
   MAKAN_JAJAN: "Makan & Jajan",
@@ -33,22 +27,12 @@ const categoryLabels: Record<string, string> = {
   LIBURAN: "Liburan",
   SERVIS_MOTOR: "Servis Motor",
   LAINNYA: "Lainnya",
-
   TABUNGAN_MASUK: "Masuk ke Tabungan",
   TABUNGAN_KELUAR: "Ambil dari Tabungan",
-
   PINJAMKAN_UANG: "Pinjamkan Uang",
   PENGEMBALIAN_PINJAMAN:
     "Pengembalian Pinjaman"
 };
-
-function rupiah(value: number) {
-  return new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    maximumFractionDigits: 0
-  }).format(value);
-}
 
 function formatDateTime(value: string) {
   const date = new Date(value);
@@ -62,21 +46,27 @@ function formatDateTime(value: string) {
   }).format(date);
 }
 
-function getAmountStyle(
-  type: Transaction["transaction_type"],
+function getTransactionStyle(
+  type: string,
   category: string
 ) {
   if (type === "INCOME") {
     return {
       prefix: "+",
-      className: "text-green-600"
+      color: "text-green-600",
+      icon: "↗",
+      iconBg: "bg-green-50",
+      iconColor: "text-green-600"
     };
   }
 
   if (type === "EXPENSE") {
     return {
       prefix: "-",
-      className: "text-red-600"
+      color: "text-red-500",
+      icon: "↘",
+      iconBg: "bg-red-50",
+      iconColor: "text-red-500"
     };
   }
 
@@ -86,7 +76,10 @@ function getAmountStyle(
   ) {
     return {
       prefix: "-",
-      className: "text-orange-500"
+      color: "text-orange-500",
+      icon: "↓",
+      iconBg: "bg-orange-50",
+      iconColor: "text-orange-500"
     };
   }
 
@@ -96,7 +89,10 @@ function getAmountStyle(
   ) {
     return {
       prefix: "+",
-      className: "text-green-600"
+      color: "text-green-600",
+      icon: "↑",
+      iconBg: "bg-green-50",
+      iconColor: "text-green-600"
     };
   }
 
@@ -106,29 +102,39 @@ function getAmountStyle(
   ) {
     return {
       prefix: "-",
-      className: "text-orange-500"
+      color: "text-orange-500",
+      icon: "↓",
+      iconBg: "bg-orange-50",
+      iconColor: "text-orange-500"
     };
   }
 
   if (
     type === "LOAN" &&
-    category === "PENGEMBALIAN_PINJAMAN"
+    category ===
+      "PENGEMBALIAN_PINJAMAN"
   ) {
     return {
       prefix: "+",
-      className: "text-green-600"
+      color: "text-green-600",
+      icon: "↑",
+      iconBg: "bg-green-50",
+      iconColor: "text-green-600"
     };
   }
 
   return {
     prefix: "",
-    className: "text-slate-900"
+    color: "text-slate-900",
+    icon: "•",
+    iconBg: "bg-slate-100",
+    iconColor: "text-slate-500"
   };
 }
 
 export default function TransactionsPage() {
-  const router = useRouter();
   const supabase = createClient();
+  const router = useRouter();
 
   const [transactions, setTransactions] =
     useState<Transaction[]>([]);
@@ -136,57 +142,50 @@ export default function TransactionsPage() {
   const [loading, setLoading] =
     useState(true);
 
-  const [error, setError] =
-    useState("");
-
   const [deletingId, setDeletingId] =
     useState<string | null>(null);
 
+  const [errorMessage, setErrorMessage] =
+    useState("");
+
   async function loadTransactions() {
     setLoading(true);
-    setError("");
+    setErrorMessage("");
 
     const {
-      data: { user }
+      data: { user },
+      error: userError
     } = await supabase.auth.getUser();
 
-    if (!user) {
+    if (userError || !user) {
       router.push("/login");
       return;
     }
 
     const {
       data,
-      error: fetchError
+      error
     } = await supabase
       .from("transactions")
       .select(
-        `
-          id,
-          transaction_type,
-          category,
-          amount,
-          transaction_date,
-          description
-        `
+        "id, transaction_type, category, amount, transaction_date, description, savings_id"
       )
       .eq("user_id", user.id)
       .order("transaction_date", {
         ascending: false
       });
 
-    if (fetchError) {
-      setError(
+    if (error) {
+      setErrorMessage(
         "Gagal mengambil history transaksi: " +
-          fetchError.message
+          error.message
       );
-
       setLoading(false);
       return;
     }
 
     setTransactions(
-      (data ?? []) as Transaction[]
+      (data as Transaction[]) ?? []
     );
 
     setLoading(false);
@@ -196,237 +195,360 @@ export default function TransactionsPage() {
     loadTransactions();
   }, []);
 
-  async function deleteTransaction(
+  async function recalculateSavings(
+    savingsId: string,
+    remainingTransactions: Transaction[]
+  ) {
+    let currentAmount = 0;
+
+    for (const transaction of remainingTransactions) {
+      if (
+        transaction.savings_id !==
+        savingsId
+      ) {
+        continue;
+      }
+
+      const amount =
+        Number(transaction.amount);
+
+      if (
+        transaction.transaction_type ===
+          "TRANSFER" &&
+        transaction.category ===
+          "TABUNGAN_MASUK"
+      ) {
+        currentAmount += amount;
+      }
+
+      if (
+        transaction.transaction_type ===
+          "TRANSFER" &&
+        transaction.category ===
+          "TABUNGAN_KELUAR"
+      ) {
+        currentAmount -= amount;
+      }
+    }
+
+    if (currentAmount < 0) {
+      currentAmount = 0;
+    }
+
+    const {
+      error
+    } = await supabase
+      .from("savings")
+      .update({
+        current_amount: currentAmount,
+        updated_at: new Date().toISOString()
+      })
+      .eq("id", savingsId);
+
+    if (error) {
+      throw new Error(
+        "Gagal menyinkronkan saldo tabungan: " +
+          error.message
+      );
+    }
+  }
+
+  async function handleDelete(
     transaction: Transaction
   ) {
-    const confirmed = window.confirm(
-      `Hapus transaksi ${rupiah(
-        Number(transaction.amount)
-      )}?\n\nTransaksi yang dihapus akan hilang dari history dan perhitungan Dashboard.`
-    );
+    const confirmed =
+      window.confirm(
+        "Hapus transaksi ini?\n\n" +
+          "Jika transaksi terkait tabungan, saldo tabungan juga akan disesuaikan."
+      );
 
     if (!confirmed) {
       return;
     }
 
     setDeletingId(transaction.id);
-    setError("");
+    setErrorMessage("");
 
-    const {
-      error: deleteError
-    } = await supabase
-      .from("transactions")
-      .delete()
-      .eq("id", transaction.id);
+    try {
+      const {
+        data: { user },
+        error: userError
+      } = await supabase.auth.getUser();
 
-    if (deleteError) {
-      setError(
-        "Transaksi gagal dihapus: " +
-          deleteError.message
+      if (userError || !user) {
+        router.push("/login");
+        return;
+      }
+
+      const {
+        error: deleteError
+      } = await supabase
+        .from("transactions")
+        .delete()
+        .eq("id", transaction.id)
+        .eq("user_id", user.id);
+
+      if (deleteError) {
+        throw new Error(
+          "Gagal menghapus transaksi: " +
+            deleteError.message
+        );
+      }
+
+      const remainingTransactions =
+        transactions.filter(
+          (item) =>
+            item.id !== transaction.id
+        );
+
+      setTransactions(
+        remainingTransactions
       );
 
+      if (
+        transaction.savings_id &&
+        (
+          transaction.category ===
+            "TABUNGAN_MASUK" ||
+          transaction.category ===
+            "TABUNGAN_KELUAR"
+        )
+      ) {
+        await recalculateSavings(
+          transaction.savings_id,
+          remainingTransactions
+        );
+      }
+
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Terjadi kesalahan."
+      );
+
+      await loadTransactions();
+    } finally {
       setDeletingId(null);
-      return;
     }
-
-    setTransactions((current) =>
-      current.filter(
-        (item) =>
-          item.id !== transaction.id
-      )
-    );
-
-    setDeletingId(null);
-
-    router.refresh();
   }
 
   return (
-    <main className="min-h-screen bg-slate-50">
-      <div className="mx-auto min-h-screen w-full max-w-md bg-slate-50 pb-8">
+    <main className="min-h-screen bg-slate-100">
+
+      <div className="mx-auto min-h-screen w-full max-w-md bg-gradient-to-b from-sky-400 via-sky-300 to-slate-50 pb-24">
 
         {/* HEADER */}
-        <header className="bg-slate-900 px-5 pb-6 pt-6 text-white">
+        <header className="px-5 pb-6 pt-6 text-white">
 
-          <button
-            type="button"
-            onClick={() =>
-              router.push("/dashboard")
-            }
-            className="text-sm text-slate-300"
-          >
-            ← Kembali
-          </button>
+          <div className="flex items-center gap-3">
 
-          <div className="mt-4 flex items-end justify-between gap-3">
+            <Link
+              href="/dashboard"
+              className="flex h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-white/15 text-xl backdrop-blur"
+            >
+              ←
+            </Link>
 
             <div>
-              <h1 className="text-2xl font-bold">
+              <p className="text-xs text-white/80">
+                MyFinance
+              </p>
+
+              <h1 className="text-xl font-extrabold">
                 History Transaksi
               </h1>
-
-              <p className="mt-1 text-sm text-slate-300">
-                Semua transaksi keuangan kamu.
-              </p>
             </div>
-
-            <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-slate-200">
-              {transactions.length}
-            </span>
 
           </div>
 
         </header>
 
-        {/* CONTENT */}
-        <section className="space-y-4 px-4 py-5">
+        <div className="px-4">
+
+          {/* ERROR */}
+          {errorMessage && (
+            <div className="mb-4 rounded-2xl border border-red-100 bg-red-50 p-4 text-sm text-red-600">
+              {errorMessage}
+            </div>
+          )}
 
           {/* ADD TRANSACTION */}
           <Link
             href="/transactions/new"
-            className="flex w-full items-center justify-center rounded-2xl bg-slate-900 px-4 py-4 font-semibold text-white"
+            className="mb-4 flex items-center justify-center rounded-2xl bg-blue-600 px-4 py-3.5 text-sm font-bold text-white shadow-lg shadow-blue-200 transition-transform active:scale-[0.98]"
           >
-            + Tambah Transaksi
+            ＋ Tambah Transaksi
           </Link>
 
-          {error && (
-            <div className="rounded-xl bg-red-50 p-3 text-sm text-red-600">
-              {error}
-            </div>
-          )}
-
-          {/* TRANSACTION LIST */}
-          <div className="rounded-2xl bg-white p-4 shadow-sm">
-
-            <div className="mb-4">
-              <h2 className="font-semibold text-slate-900">
-                Semua Transaksi
-              </h2>
-
-              <p className="mt-1 text-xs text-slate-500">
-                Transaksi terbaru berada di paling atas.
-              </p>
-            </div>
+          {/* HISTORY */}
+          <section className="overflow-hidden rounded-3xl bg-white px-4 shadow-[0_7px_22px_rgba(33,87,140,0.08)]">
 
             {loading ? (
 
-              <div className="rounded-xl bg-slate-50 p-5 text-center">
-                <p className="text-sm text-slate-500">
-                  Memuat transaksi...
-                </p>
+              <div className="py-10 text-center text-sm text-slate-400">
+                Memuat transaksi...
               </div>
 
             ) : transactions.length === 0 ? (
 
-              <div className="rounded-xl bg-slate-50 p-5 text-center">
+              <div className="py-10 text-center">
 
-                <p className="text-sm text-slate-500">
-                  Belum ada transaksi.
+                <div className="text-3xl">
+                  🧾
+                </div>
+
+                <p className="mt-2 text-sm font-semibold text-slate-600">
+                  Belum ada transaksi
                 </p>
 
-                <Link
-                  href="/transactions/new"
-                  className="mt-2 inline-block text-sm font-semibold text-slate-900"
-                >
-                  + Tambah transaksi
-                </Link>
+                <p className="mt-1 text-xs text-slate-400">
+                  Semua transaksi yang kamu tambahkan akan muncul di sini.
+                </p>
 
               </div>
 
             ) : (
 
-              <div className="space-y-3">
+              transactions.map(
+                (transaction, index) => {
 
-                {transactions.map(
-                  (transaction) => {
+                  const style =
+                    getTransactionStyle(
+                      transaction.transaction_type,
+                      transaction.category
+                    );
 
-                    const amount =
-                      Number(
-                        transaction.amount
-                      );
+                  return (
+                    <div
+                      key={transaction.id}
+                      className={`flex items-center justify-between gap-3 py-4 ${
+                        index > 0
+                          ? "border-t border-slate-100"
+                          : ""
+                      }`}
+                    >
 
-                    const amountStyle =
-                      getAmountStyle(
-                        transaction.transaction_type,
-                        transaction.category
-                      );
+                      <div className="flex min-w-0 flex-1 items-center gap-3">
 
-                    const categoryLabel =
-                      categoryLabels[
-                        transaction.category
-                      ] ??
-                      transaction.category;
+                        <div
+                          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] ${style.iconBg} ${style.iconColor} text-lg font-bold`}
+                        >
+                          {style.icon}
+                        </div>
 
-                    const isDeleting =
-                      deletingId ===
-                      transaction.id;
+                        <div className="min-w-0">
 
-                    return (
-                      <div
-                        key={transaction.id}
-                        className="rounded-xl bg-slate-50 p-4"
-                      >
+                          <p className="truncate text-sm font-extrabold text-slate-800">
+                            {categoryLabels[
+                              transaction.category
+                            ] ??
+                              transaction.category}
+                          </p>
 
-                        <div className="flex items-start justify-between gap-3">
+                          <p className="truncate text-xs text-slate-400">
+                            {transaction.description ||
+                              "-"}
+                          </p>
 
-                          <div className="min-w-0">
-
-                            <p className="font-semibold text-slate-900">
-                              {categoryLabel}
-                            </p>
-
-                            {transaction.description && (
-                              <p className="mt-1 break-words text-xs text-slate-500">
-                                {transaction.description}
-                              </p>
+                          <p className="mt-0.5 text-[10px] text-slate-400">
+                            {formatDateTime(
+                              transaction.transaction_date
                             )}
-
-                            <p className="mt-1 text-xs text-slate-400">
-                              {formatDateTime(
-                                transaction.transaction_date
-                              )}
-                            </p>
-
-                          </div>
-
-                          <p
-                            className={`shrink-0 text-sm font-bold ${amountStyle.className}`}
-                          >
-                            {amountStyle.prefix}
-                            {rupiah(amount)}
                           </p>
 
                         </div>
 
+                      </div>
+
+                      <div className="flex shrink-0 flex-col items-end">
+
+                        <p
+                          className={`text-sm font-extrabold ${style.color}`}
+                        >
+                          {style.prefix}
+                          {rupiah(
+                            transaction.amount
+                          )}
+                        </p>
+
                         <button
                           type="button"
+                          disabled={
+                            deletingId ===
+                            transaction.id
+                          }
                           onClick={() =>
-                            deleteTransaction(
+                            handleDelete(
                               transaction
                             )
                           }
-                          disabled={isDeleting}
-                          className="mt-3 w-full rounded-xl bg-red-50 px-4 py-2.5 text-sm font-semibold text-red-600 disabled:opacity-50"
+                          className="mt-1 rounded-lg px-2 py-1 text-[10px] font-bold text-red-500 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
                         >
-                          {isDeleting
+                          {deletingId ===
+                          transaction.id
                             ? "Menghapus..."
-                            : "Hapus Transaksi"}
+                            : "Hapus"}
                         </button>
 
                       </div>
-                    );
-                  }
-                )}
 
-              </div>
+                    </div>
+                  );
+                }
+              )
 
             )}
 
-          </div>
+          </section>
 
-        </section>
-
+        </div>
       </div>
+
+      {/* BOTTOM NAVIGATION */}
+      <nav className="fixed bottom-0 left-1/2 z-20 flex h-[76px] w-full max-w-md -translate-x-1/2 items-center justify-around border-t border-slate-100 bg-white/95 px-8 pb-[env(safe-area-inset-bottom)] pt-2 backdrop-blur-xl">
+
+        <Link
+          href="/dashboard"
+          className="flex w-20 flex-col items-center text-slate-500"
+        >
+          <span className="text-2xl">
+            ⌂
+          </span>
+
+          <span className="mt-0.5 text-[10px] font-bold">
+            Beranda
+          </span>
+        </Link>
+
+        <Link
+          href="/transactions/new"
+          className="flex w-20 flex-col items-center text-blue-600"
+        >
+          <span className="mb-0.5 flex h-11 w-11 -translate-y-4 items-center justify-center rounded-2xl border-4 border-slate-50 bg-blue-600 text-2xl text-white shadow-lg shadow-blue-200">
+            ＋
+          </span>
+
+          <span className="-mt-3 text-[10px] font-bold">
+            Transaksi
+          </span>
+        </Link>
+
+        <Link
+          href="/savings"
+          className="flex w-20 flex-col items-center text-slate-500"
+        >
+          <span className="text-2xl">
+            ▣
+          </span>
+
+          <span className="mt-0.5 text-[10px] font-bold">
+            Tabungan
+          </span>
+        </Link>
+
+      </nav>
+
     </main>
   );
 }
