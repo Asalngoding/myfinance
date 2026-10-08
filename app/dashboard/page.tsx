@@ -224,7 +224,6 @@ export default async function DashboardPage() {
               Saldo setelah memperhitungkan tabungan
             </p>
 
-            {/* INCOME / EXPENSE */}
             <div className="mt-4 grid grid-cols-2 gap-2">
 
               <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
@@ -255,7 +254,7 @@ export default async function DashboardPage() {
 
           </section>
 
-          {/* NET CASH FLOW + RASIO */}
+          {/* NET CASH FLOW & RASIO */}
           <div className="mt-3 grid grid-cols-2 gap-2">
 
             <section className="rounded-2xl bg-gradient-to-br from-blue-600 to-sky-500 p-4 text-white shadow-[0_8px_20px_rgba(22,119,232,0.18)]">
