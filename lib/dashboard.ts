@@ -22,9 +22,7 @@ export async function getDashboard(
     ).padStart(2, "0")}-01T00:00:00`;
 
   const {
-    data: {
-      user
-    }
+    data: { user }
   } = await supabase.auth.getUser();
 
   if (!user) {
@@ -40,9 +38,36 @@ export async function getDashboard(
     };
   }
 
+  /*
+   * ==========================================
+   * 1. Ambil semua transaksi
+   *    untuk menghitung Saldo Tersedia
+   * ==========================================
+   */
   const {
-    data: transactions,
-    error
+    data: allTransactions,
+    error: allTransactionsError
+  } = await supabase
+    .from("transactions")
+    .select("*")
+    .eq("user_id", user.id);
+
+  if (allTransactionsError) {
+    throw new Error(
+      "Gagal mengambil seluruh transaksi: " +
+        allTransactionsError.message
+    );
+  }
+
+  /*
+   * ==========================================
+   * 2. Ambil transaksi bulan berjalan
+   *    untuk statistik Dashboard
+   * ==========================================
+   */
+  const {
+    data: monthlyTransactions,
+    error: monthlyTransactionsError
   } = await supabase
     .from("transactions")
     .select("*")
@@ -59,21 +84,36 @@ export async function getDashboard(
       ascending: false
     });
 
-  if (error) {
+  if (monthlyTransactionsError) {
     throw new Error(
-      "Gagal mengambil transaksi: " +
-        error.message
+      "Gagal mengambil transaksi bulanan: " +
+        monthlyTransactionsError.message
     );
   }
 
-  const rows = transactions ?? [];
+  const allRows =
+    allTransactions ?? [];
 
-  let income = 0;
-  let expense = 0;
-  let savingsIn = 0;
-  let savingsOut = 0;
+  const monthlyRows =
+    monthlyTransactions ?? [];
 
-  for (const transaction of rows) {
+  /*
+   * ==========================================
+   * 3. Hitung saldo tersedia ALL TIME
+   *
+   * Saldo =
+   * seluruh uang masuk
+   * - seluruh uang keluar
+   * - seluruh uang yang masuk tabungan
+   * + seluruh uang yang diambil dari tabungan
+   * ==========================================
+   */
+  let totalIncome = 0;
+  let totalExpense = 0;
+  let totalSavingsIn = 0;
+  let totalSavingsOut = 0;
+
+  for (const transaction of allRows) {
     const amount =
       Number(transaction.amount);
 
@@ -83,39 +123,69 @@ export async function getDashboard(
     const category =
       transaction.category;
 
-    /*
-     * UANG MASUK
-     *
-     * Semua INCOME menambah
-     * pemasukan.
-     */
+    if (type === "INCOME") {
+      totalIncome += amount;
+      continue;
+    }
+
+    if (type === "EXPENSE") {
+      totalExpense += amount;
+      continue;
+    }
+
+    if (
+      type === "TRANSFER" &&
+      category === "TABUNGAN_MASUK"
+    ) {
+      totalSavingsIn += amount;
+      continue;
+    }
+
+    if (
+      type === "TRANSFER" &&
+      category === "TABUNGAN_KELUAR"
+    ) {
+      totalSavingsOut += amount;
+      continue;
+    }
+  }
+
+  const available =
+    totalIncome -
+    totalExpense -
+    totalSavingsIn +
+    totalSavingsOut;
+
+  /*
+   * ==========================================
+   * 4. Hitung statistik BULAN BERJALAN
+   * ==========================================
+   */
+  let income = 0;
+  let expense = 0;
+  let savingsIn = 0;
+  let savingsOut = 0;
+
+  for (const transaction of monthlyRows) {
+    const amount =
+      Number(transaction.amount);
+
+    const type =
+      transaction.transaction_type;
+
+    const category =
+      transaction.category;
+
     if (type === "INCOME") {
       income += amount;
       continue;
     }
 
-    /*
-     * UANG KELUAR
-     *
-     * Semua EXPENSE mengurangi
-     * uang tersedia.
-     */
     if (type === "EXPENSE") {
       expense += amount;
       continue;
     }
 
-    /*
-     * TABUNGAN
-     *
-     * TABUNGAN_MASUK:
-     * uang dipindahkan dari saldo
-     * tersedia ke tabungan.
-     *
-     * TABUNGAN_KELUAR:
-     * uang dipindahkan dari tabungan
-     * kembali ke saldo tersedia.
-     */
     if (
       type === "TRANSFER" &&
       category === "TABUNGAN_MASUK"
@@ -134,39 +204,45 @@ export async function getDashboard(
   }
 
   /*
-   * Saldo tersedia:
-   *
-   * Uang Masuk
-   * - Uang Keluar
-   * - Menabung
-   * + Ambil Tabungan
+   * Net Cash Flow bulan berjalan
    */
-  const available =
+  const netCashFlow =
     income -
     expense -
     savingsIn +
     savingsOut;
 
   /*
-   * Net Cash Flow juga memperhitungkan
-   * perpindahan uang ke/dari tabungan.
+   * Persentase pengeluaran
    */
-  const netCashFlow =
-    available;
-
   const expenseRatio =
     income > 0
       ? (expense / income) * 100
       : 0;
 
   return {
+    /*
+     * Statistik bulan berjalan
+     */
     income,
     expense,
     savingsIn,
     savingsOut,
     netCashFlow,
+
+    /*
+     * Saldo tersedia seluruh periode
+     */
     available,
+
+    /*
+     * Persentase pengeluaran
+     */
     expenseRatio,
-    transactions: rows
+
+    /*
+     * History transaksi bulan berjalan
+     */
+    transactions: monthlyRows
   };
 }
