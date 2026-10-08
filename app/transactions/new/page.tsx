@@ -154,6 +154,89 @@ export default function NewTransactionPage() {
     return savingCategories;
   }
 
+  async function getAvailableBalance() {
+    const {
+      data: { user },
+      error: userError
+    } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      throw new Error(
+        "Sesi login tidak ditemukan."
+      );
+    }
+
+    const {
+      data: transactions,
+      error
+    } = await supabase
+      .from("transactions")
+      .select(
+        "transaction_type, category, amount"
+      )
+      .eq("user_id", user.id);
+
+    if (error) {
+      throw new Error(
+        "Gagal mengecek saldo: " +
+          error.message
+      );
+    }
+
+    let totalIncome = 0;
+    let totalExpense = 0;
+    let totalSavingsIn = 0;
+    let totalSavingsOut = 0;
+
+    for (const transaction of
+      transactions ?? []) {
+      const amount =
+        Number(transaction.amount);
+
+      if (
+        transaction.transaction_type ===
+        "INCOME"
+      ) {
+        totalIncome += amount;
+        continue;
+      }
+
+      if (
+        transaction.transaction_type ===
+        "EXPENSE"
+      ) {
+        totalExpense += amount;
+        continue;
+      }
+
+      if (
+        transaction.transaction_type ===
+          "TRANSFER" &&
+        transaction.category ===
+          "TABUNGAN_MASUK"
+      ) {
+        totalSavingsIn += amount;
+        continue;
+      }
+
+      if (
+        transaction.transaction_type ===
+          "TRANSFER" &&
+        transaction.category ===
+          "TABUNGAN_KELUAR"
+      ) {
+        totalSavingsOut += amount;
+      }
+    }
+
+    return (
+      totalIncome -
+      totalExpense -
+      totalSavingsIn +
+      totalSavingsOut
+    );
+  }
+
   async function handleSubmit(
     event: React.FormEvent<HTMLFormElement>
   ) {
@@ -196,6 +279,42 @@ export default function NewTransactionPage() {
       if (userError || !user) {
         router.push("/login");
         return;
+      }
+
+      /*
+       * Validasi saldo hanya untuk
+       * transaksi Uang Keluar.
+       *
+       * Tabungan memiliki mekanisme
+       * validasi tersendiri di halaman
+       * Tabungan.
+       */
+      if (
+        transactionType ===
+        "EXPENSE"
+      ) {
+        const availableBalance =
+          await getAvailableBalance();
+
+        if (
+          numericAmount >
+          availableBalance
+        ) {
+          setErrorMessage(
+            `⚠️ Saldo tidak mencukupi. Saldo tersedia ${new Intl.NumberFormat(
+              "id-ID",
+              {
+                style: "currency",
+                currency: "IDR",
+                maximumFractionDigits: 0
+              }
+            ).format(
+              availableBalance
+            )}.`
+          );
+
+          return;
+        }
       }
 
       const transactionDateIso =
