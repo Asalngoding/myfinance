@@ -1,71 +1,47 @@
 "use client";
 
-import {
-  FormEvent,
-  useEffect,
-  useState
-} from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { rupiah, dateIndonesia } from "@/lib/format";
 
 type Saving = {
   id: string;
   name: string;
-  target_amount: number;
-  current_amount: number;
+  target_amount: number | string | null;
+  current_amount: number | string | null;
   target_date: string | null;
   description: string | null;
 };
 
+type Transaction = {
+  id: string;
+  transaction_type: string;
+  category: string;
+  amount: number | string;
+  savings_id: string | null;
+};
+
 type ActionType = "SETOR" | "AMBIL";
-
-function rupiah(value: number) {
-  return new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    maximumFractionDigits: 0
-  }).format(value);
-}
-
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat("id-ID", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric"
-  }).format(
-    new Date(`${value}T00:00:00`)
-  );
-}
 
 export default function SavingsPage() {
   const router = useRouter();
   const supabase = createClient();
 
-  const [savings, setSavings] =
-    useState<Saving[]>([]);
+  const [savings, setSavings] = useState<Saving[]>([]);
+  const [availableBalance, setAvailableBalance] =
+    useState(0);
 
-  const [loading, setLoading] =
-    useState(true);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
-  const [saving, setSaving] =
+  const [showCreateModal, setShowCreateModal] =
     useState(false);
 
-  const [error, setError] =
-    useState("");
+  const [showActionModal, setShowActionModal] =
+    useState(false);
 
-  const [name, setName] =
-    useState("");
-
-  const [targetAmount, setTargetAmount] =
-    useState("");
-
-  const [targetDate, setTargetDate] =
-    useState("");
-
-  const [description, setDescription] =
-    useState("");
-
-  const [actionSaving, setActionSaving] =
+  const [selectedSaving, setSelectedSaving] =
     useState<Saving | null>(null);
 
   const [actionType, setActionType] =
@@ -74,158 +50,205 @@ export default function SavingsPage() {
   const [actionAmount, setActionAmount] =
     useState("");
 
-  const [actionLoading, setActionLoading] =
-    useState(false);
-
-  const [actionError, setActionError] =
+  const [name, setName] = useState("");
+  const [targetAmount, setTargetAmount] =
+    useState("");
+  const [targetDate, setTargetDate] =
+    useState("");
+  const [description, setDescription] =
     useState("");
 
-  const [availableBalance, setAvailableBalance] =
-    useState(0);
+  const [errorMessage, setErrorMessage] =
+    useState("");
+
+  const [successMessage, setSuccessMessage] =
+    useState("");
 
   async function loadData() {
-    setLoading(true);
-    setError("");
+    try {
+      setLoading(true);
 
-    const {
-      data: { user }
-    } = await supabase.auth.getUser();
+      const {
+        data: {
+          user,
+        },
+      } = await supabase.auth.getUser();
 
-    if (!user) {
-      router.push("/login");
-      return;
-    }
+      if (!user) {
+        router.push("/login");
+        return;
+      }
 
-    const [
-      savingsResult,
-      transactionsResult
-    ] = await Promise.all([
-      supabase
+      const {
+        data: savingsData,
+        error: savingsError,
+      } = await supabase
         .from("savings")
-        .select(
-          `
-            id,
-            name,
-            target_amount,
-            current_amount,
-            target_date,
-            description
-          `
-        )
+        .select("*")
         .eq("user_id", user.id)
         .order("created_at", {
-          ascending: false
-        }),
+          ascending: false,
+        });
 
-      supabase
+      if (savingsError) {
+        throw savingsError;
+      }
+
+      const {
+        data: transactionData,
+        error: transactionError,
+      } = await supabase
         .from("transactions")
         .select(
-          `
-            transaction_type,
-            category,
-            amount
-          `
+          "id, transaction_type, category, amount, savings_id"
         )
-        .eq("user_id", user.id)
-    ]);
+        .eq("user_id", user.id);
 
-    if (savingsResult.error) {
-      setError(
-        "Gagal mengambil data tabungan: " +
-          savingsResult.error.message
+      if (transactionError) {
+        throw transactionError;
+      }
+
+      const transactionRows =
+        (transactionData as Transaction[]) || [];
+
+      let totalIncome = 0;
+      let totalExpense = 0;
+      let totalSavingsIn = 0;
+      let totalSavingsOut = 0;
+
+      transactionRows.forEach(
+        (transaction) => {
+          const amount = Number(
+            transaction.amount || 0
+          );
+
+          if (
+            transaction.transaction_type ===
+            "INCOME"
+          ) {
+            totalIncome += amount;
+          }
+
+          if (
+            transaction.transaction_type ===
+            "EXPENSE"
+          ) {
+            totalExpense += amount;
+          }
+
+          if (
+            transaction.category ===
+            "TABUNGAN_MASUK"
+          ) {
+            totalSavingsIn += amount;
+          }
+
+          if (
+            transaction.category ===
+            "TABUNGAN_KELUAR"
+          ) {
+            totalSavingsOut += amount;
+          }
+        }
       );
 
-      setLoading(false);
-      return;
-    }
+      const balance =
+        totalIncome -
+        totalExpense -
+        totalSavingsIn +
+        totalSavingsOut;
 
-    if (transactionsResult.error) {
-      setError(
-        "Gagal mengambil data transaksi: " +
-          transactionsResult.error.message
+      setSavings(
+        (savingsData as Saving[]) || []
       );
 
+      setAvailableBalance(balance);
+    } catch (error) {
+      console.error(
+        "Gagal memuat tabungan:",
+        error
+      );
+
+      setErrorMessage(
+        "Gagal memuat data tabungan."
+      );
+    } finally {
       setLoading(false);
-      return;
     }
-
-    let income = 0;
-    let expense = 0;
-    let savingsIn = 0;
-    let savingsOut = 0;
-
-    for (
-      const transaction of
-      transactionsResult.data ?? []
-    ) {
-      const amount =
-        Number(transaction.amount);
-
-      if (
-        transaction.transaction_type ===
-        "INCOME"
-      ) {
-        income += amount;
-      }
-
-      if (
-        transaction.transaction_type ===
-        "EXPENSE"
-      ) {
-        expense += amount;
-      }
-
-      if (
-        transaction.transaction_type ===
-          "TRANSFER" &&
-        transaction.category ===
-          "TABUNGAN_MASUK"
-      ) {
-        savingsIn += amount;
-      }
-
-      if (
-        transaction.transaction_type ===
-          "TRANSFER" &&
-        transaction.category ===
-          "TABUNGAN_KELUAR"
-      ) {
-        savingsOut += amount;
-      }
-    }
-
-    setAvailableBalance(
-      income -
-        expense -
-        savingsIn +
-        savingsOut
-    );
-
-    setSavings(
-      (savingsResult.data ?? []) as Saving[]
-    );
-
-    setLoading(false);
   }
 
   useEffect(() => {
     loadData();
   }, []);
 
-  async function createSaving(
-    e: FormEvent
+  function formatAmountInput(
+    value: string
   ) {
-    e.preventDefault();
+    const numericValue =
+      value.replace(/\D/g, "");
 
-    setError("");
+    if (!numericValue) {
+      return "";
+    }
+
+    return new Intl.NumberFormat(
+      "id-ID"
+    ).format(Number(numericValue));
+  }
+
+  function getNumericValue(
+    value: string
+  ) {
+    return Number(
+      value.replace(/\./g, "").replace(/,/g, "")
+    );
+  }
+
+  function closeCreateModal() {
+    if (saving) return;
+
+    setShowCreateModal(false);
+    setName("");
+    setTargetAmount("");
+    setTargetDate("");
+    setDescription("");
+    setErrorMessage("");
+  }
+
+  function openActionModal(
+    savingItem: Saving,
+    type: ActionType
+  ) {
+    setSelectedSaving(savingItem);
+    setActionType(type);
+    setActionAmount("");
+    setErrorMessage("");
+    setSuccessMessage("");
+    setShowActionModal(true);
+  }
+
+  function closeActionModal() {
+    if (saving) return;
+
+    setShowActionModal(false);
+    setSelectedSaving(null);
+    setActionAmount("");
+    setErrorMessage("");
+  }
+
+  async function handleCreateSaving(
+    event: React.FormEvent<HTMLFormElement>
+  ) {
+    event.preventDefault();
+
+    setErrorMessage("");
+    setSuccessMessage("");
 
     const numericTarget =
-      Number(
-        targetAmount.replace(/\D/g, "")
-      );
+      getNumericValue(targetAmount);
 
     if (!name.trim()) {
-      setError(
+      setErrorMessage(
         "Nama tabungan wajib diisi."
       );
       return;
@@ -235,7 +258,7 @@ export default function SavingsPage() {
       !numericTarget ||
       numericTarget <= 0
     ) {
-      setError(
+      setErrorMessage(
         "Target tabungan harus lebih dari 0."
       );
       return;
@@ -243,756 +266,703 @@ export default function SavingsPage() {
 
     setSaving(true);
 
-    const {
-      data: { user }
-    } = await supabase.auth.getUser();
+    try {
+      const {
+        data: {
+          user,
+        },
+      } = await supabase.auth.getUser();
 
-    if (!user) {
-      router.push("/login");
-      return;
-    }
+      if (!user) {
+        throw new Error(
+          "Sesi login tidak ditemukan."
+        );
+      }
 
-    const {
-      error: insertError
-    } = await supabase
-      .from("savings")
-      .insert({
-        user_id: user.id,
-        name: name.trim(),
-        target_amount:
-          numericTarget,
-        current_amount: 0,
-        target_date:
-          targetDate || null,
-        description:
-          description.trim() || null
-      });
+      const {
+        error,
+      } = await supabase
+        .from("savings")
+        .insert({
+          user_id: user.id,
+          name: name.trim(),
+          target_amount: numericTarget,
+          current_amount: 0,
+          target_date:
+            targetDate || null,
+          description:
+            description.trim() || null,
+        });
 
-    if (insertError) {
-      setError(
-        "Tabungan gagal dibuat: " +
-          insertError.message
+      if (error) {
+        throw error;
+      }
+
+      closeCreateModal();
+
+      setSuccessMessage(
+        "Target tabungan berhasil dibuat."
       );
 
+      await loadData();
+
+      setTimeout(() => {
+        setSuccessMessage("");
+      }, 1500);
+    } catch (error) {
+      console.error(
+        "Gagal membuat tabungan:",
+        error
+      );
+
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Gagal membuat target tabungan."
+      );
+    } finally {
       setSaving(false);
-      return;
     }
-
-    setName("");
-    setTargetAmount("");
-    setTargetDate("");
-    setDescription("");
-
-    await loadData();
-
-    setSaving(false);
   }
 
-  async function handleSavingAction(
-    e: FormEvent
+  async function handleAction(
+    event: React.FormEvent<HTMLFormElement>
   ) {
-    e.preventDefault();
+    event.preventDefault();
 
-    if (!actionSaving) {
-      return;
-    }
+    if (!selectedSaving) return;
 
-    setActionError("");
+    setErrorMessage("");
+    setSuccessMessage("");
 
     const numericAmount =
-      Number(
-        actionAmount.replace(/\D/g, "")
-      );
+      getNumericValue(actionAmount);
 
     if (
       !numericAmount ||
       numericAmount <= 0
     ) {
-      setActionError(
+      setErrorMessage(
         "Nominal harus lebih dari 0."
       );
       return;
     }
 
-    const currentAmount =
-      Number(
-        actionSaving.current_amount
-      );
+    const currentAmount = Number(
+      selectedSaving.current_amount || 0
+    );
 
     /*
-     * SETOR:
-     * Tidak boleh melebihi saldo tersedia.
+     * SETOR TABUNGAN
      */
-    if (
-      actionType === "SETOR" &&
-      numericAmount > availableBalance
-    ) {
-      setActionError(
-        `Saldo tidak mencukupi. Saldo tersedia ${rupiah(
-          availableBalance
-        )}. Maksimal setor ${rupiah(
-          availableBalance
-        )}.`
-      );
-      return;
+    if (actionType === "SETOR") {
+      if (
+        numericAmount >
+        availableBalance
+      ) {
+        setErrorMessage(
+          `⚠️ Saldo tidak mencukupi. Saldo tersedia ${rupiah(
+            availableBalance
+          )}. Maksimal setor ${rupiah(
+            availableBalance
+          )}.`
+        );
+        return;
+      }
     }
 
     /*
-     * AMBIL:
-     * Tidak boleh melebihi saldo tabungan.
+     * AMBIL TABUNGAN
      */
-    if (
-      actionType === "AMBIL" &&
-      numericAmount > currentAmount
-    ) {
-      setActionError(
-        `Saldo tabungan tidak mencukupi. Saldo tabungan saat ini ${rupiah(
-          currentAmount
-        )}.`
-      );
-      return;
+    if (actionType === "AMBIL") {
+      if (
+        numericAmount >
+        currentAmount
+      ) {
+        setErrorMessage(
+          `⚠️ Saldo tabungan tidak mencukupi. Saldo tabungan ${rupiah(
+            currentAmount
+          )}.`
+        );
+        return;
+      }
     }
 
-    setActionLoading(true);
+    setSaving(true);
 
-    const newAmount =
-      actionType === "SETOR"
-        ? currentAmount +
-          numericAmount
-        : currentAmount -
-          numericAmount;
+    try {
+      const {
+        data: {
+          user,
+        },
+      } = await supabase.auth.getUser();
 
-    /*
-     * Simpan saldo tabungan baru.
-     */
-    const {
-      error: updateError
-    } = await supabase
-      .from("savings")
-      .update({
-        current_amount:
-          newAmount
-      })
-      .eq(
-        "id",
-        actionSaving.id
-      );
+      if (!user) {
+        throw new Error(
+          "Sesi login tidak ditemukan."
+        );
+      }
 
-    if (updateError) {
-      setActionError(
-        "Saldo tabungan gagal diperbarui: " +
-          updateError.message
-      );
+      const newCurrentAmount =
+        actionType === "SETOR"
+          ? currentAmount +
+            numericAmount
+          : currentAmount -
+            numericAmount;
 
-      setActionLoading(false);
-      return;
-    }
-
-    const {
-      data: { user }
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      await supabase
+      /*
+       * Update saldo tabungan terlebih dahulu.
+       */
+      const {
+        error: updateError,
+      } = await supabase
         .from("savings")
         .update({
           current_amount:
-            currentAmount
+            newCurrentAmount,
+          updated_at: new Date().toISOString(),
         })
         .eq(
           "id",
-          actionSaving.id
-        );
-
-      router.push("/login");
-      return;
-    }
-
-    const transactionCategory =
-      actionType === "SETOR"
-        ? "TABUNGAN_MASUK"
-        : "TABUNGAN_KELUAR";
-
-    /*
-     * Catat transaksi.
-     */
-    const {
-      error: transactionError
-    } = await supabase
-      .from("transactions")
-      .insert({
-        user_id: user.id,
-        transaction_type:
-          "TRANSFER",
-        category:
-          transactionCategory,
-        amount:
-          numericAmount,
-        transaction_date:
-          new Date().toISOString(),
-        description:
-          `${
-            actionType ===
-            "SETOR"
-              ? "Setor"
-              : "Ambil"
-          } - ${actionSaving.name}`,
-        savings_id:
-          actionSaving.id
-      });
-
-    /*
-     * Jika transaksi gagal,
-     * kembalikan saldo tabungan
-     * ke kondisi sebelumnya.
-     */
-    if (transactionError) {
-      await supabase
-        .from("savings")
-        .update({
-          current_amount:
-            currentAmount
-        })
+          selectedSaving.id
+        )
         .eq(
-          "id",
-          actionSaving.id
+          "user_id",
+          user.id
         );
 
-      setActionError(
-        "Transaksi gagal disimpan: " +
-          transactionError.message
+      if (updateError) {
+        throw updateError;
+      }
+
+      /*
+       * Buat transaksi yang terhubung
+       * dengan tabungan.
+       */
+      const category =
+        actionType === "SETOR"
+          ? "TABUNGAN_MASUK"
+          : "TABUNGAN_KELUAR";
+
+      const transactionDescription =
+        actionType === "SETOR"
+          ? `Setor - ${selectedSaving.name}`
+          : `Ambil - ${selectedSaving.name}`;
+
+      const {
+        error: transactionError,
+      } = await supabase
+        .from("transactions")
+        .insert({
+          user_id: user.id,
+          transaction_type:
+            "TRANSFER",
+          category,
+          amount: numericAmount,
+          transaction_date:
+            new Date().toISOString(),
+          description:
+            transactionDescription,
+          savings_id:
+            selectedSaving.id,
+        });
+
+      /*
+       * Jika transaksi gagal,
+       * kembalikan saldo tabungan.
+       */
+      if (transactionError) {
+        await supabase
+          .from("savings")
+          .update({
+            current_amount:
+              currentAmount,
+            updated_at:
+              new Date().toISOString(),
+          })
+          .eq(
+            "id",
+            selectedSaving.id
+          )
+          .eq(
+            "user_id",
+            user.id
+          );
+
+        throw transactionError;
+      }
+
+      closeActionModal();
+
+      setSuccessMessage(
+        actionType === "SETOR"
+          ? "Setoran tabungan berhasil disimpan."
+          : "Pengambilan tabungan berhasil disimpan."
       );
 
-      setActionLoading(false);
-      return;
+      await loadData();
+
+      setTimeout(() => {
+        setSuccessMessage("");
+      }, 1500);
+    } catch (error) {
+      console.error(
+        "Gagal memproses tabungan:",
+        error
+      );
+
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Gagal memproses transaksi tabungan."
+      );
+    } finally {
+      setSaving(false);
     }
-
-    setActionAmount("");
-    setActionSaving(null);
-    setActionError("");
-
-    await loadData();
-
-    router.refresh();
-
-    setActionLoading(false);
   }
 
-  async function deleteSaving(
-    savingId: string,
-    savingName: string,
-    currentAmount: number
+  async function handleDeleteSaving(
+    savingItem: Saving
   ) {
-    /*
-     * Tabungan dengan saldo tidak boleh
-     * langsung dihapus.
-     */
+    const currentAmount = Number(
+      savingItem.current_amount || 0
+    );
+
     if (currentAmount > 0) {
-      setError(
-        "Tabungan masih memiliki saldo. Ambil seluruh saldo terlebih dahulu sebelum menghapus."
+      setErrorMessage(
+        "Tabungan yang masih memiliki saldo tidak dapat dihapus."
       );
       return;
     }
 
     const confirmed =
       window.confirm(
-        `Hapus tabungan "${savingName}"?`
+        `Hapus target tabungan "${savingItem.name}"?`
       );
 
-    if (!confirmed) {
-      return;
-    }
+    if (!confirmed) return;
 
-    setError("");
+    setSaving(true);
+    setErrorMessage("");
+    setSuccessMessage("");
 
-    const {
-      error: deleteError
-    } = await supabase
-      .from("savings")
-      .delete()
-      .eq("id", savingId);
+    try {
+      const {
+        data: {
+          user,
+        },
+      } = await supabase.auth.getUser();
 
-    if (deleteError) {
-      setError(
-        "Tabungan gagal dihapus: " +
-          deleteError.message
+      if (!user) {
+        throw new Error(
+          "Sesi login tidak ditemukan."
+        );
+      }
+
+      const {
+        error,
+      } = await supabase
+        .from("savings")
+        .delete()
+        .eq(
+          "id",
+          savingItem.id
+        )
+        .eq(
+          "user_id",
+          user.id
+        );
+
+      if (error) {
+        throw error;
+      }
+
+      setSuccessMessage(
+        "Target tabungan berhasil dihapus."
       );
-      return;
+
+      await loadData();
+
+      setTimeout(() => {
+        setSuccessMessage("");
+      }, 1500);
+    } catch (error) {
+      console.error(
+        "Gagal menghapus tabungan:",
+        error
+      );
+
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Gagal menghapus target tabungan."
+      );
+    } finally {
+      setSaving(false);
     }
-
-    setSavings((current) =>
-      current.filter(
-        (item) =>
-          item.id !== savingId
-      )
-    );
-
-    router.refresh();
   }
 
-  function openAction(
-    item: Saving,
-    type: ActionType
+  function getProgress(
+    savingItem: Saving
   ) {
-    setError("");
-    setActionError("");
-    setActionSaving(item);
-    setActionType(type);
-    setActionAmount("");
+    const current = Number(
+      savingItem.current_amount || 0
+    );
+
+    const target = Number(
+      savingItem.target_amount || 0
+    );
+
+    if (target <= 0) return 0;
+
+    return Math.min(
+      100,
+      Math.round(
+        (current / target) * 100
+      )
+    );
+  }
+
+  function getRemaining(
+    savingItem: Saving
+  ) {
+    const current = Number(
+      savingItem.current_amount || 0
+    );
+
+    const target = Number(
+      savingItem.target_amount || 0
+    );
+
+    return Math.max(
+      0,
+      target - current
+    );
   }
 
   return (
-    <main className="min-h-screen bg-slate-50">
+    <main className="min-h-screen bg-slate-50 pb-24">
+      {/* Header */}
+      <div className="bg-gradient-to-br from-sky-100 via-blue-50 to-white">
+        <div className="mx-auto max-w-md px-5 pb-6 pt-5">
+          <div className="flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() =>
+                router.push("/dashboard")
+              }
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-white/80 text-xl text-slate-700 shadow-sm"
+            >
+              ←
+            </button>
 
-      <div className="mx-auto min-h-screen w-full max-w-md bg-slate-50 pb-8">
+            <div className="text-center">
+              <p className="text-xs font-medium text-slate-500">
+                MyFinance
+              </p>
 
-        {/* HEADER */}
-        <header className="bg-slate-900 px-5 pb-6 pt-6 text-white">
+              <h1 className="text-xl font-extrabold text-slate-800">
+                Tabungan
+              </h1>
+            </div>
 
-          <button
-            type="button"
-            onClick={() =>
-              router.push(
-                "/dashboard"
-              )
-            }
-            className="text-sm text-slate-300"
-          >
-            ← Kembali
-          </button>
+            <div className="h-10 w-10" />
+          </div>
 
-          <h1 className="mt-4 text-2xl font-bold">
-            Tabungan
-          </h1>
-
-          <p className="mt-1 text-sm text-slate-300">
-            Pisahkan uang untuk tujuan yang ingin kamu capai.
-          </p>
-
-        </header>
-
-        <section className="space-y-4 px-4 py-5">
-
-          {/* SALDO TERSEDIA */}
-          <div className="rounded-2xl bg-slate-900 p-5 text-white shadow-sm">
-
-            <p className="text-sm text-slate-300">
+          {/* Saldo tersedia */}
+          <div className="mt-5 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
+            <p className="text-xs font-semibold text-slate-400">
               Saldo Tersedia
             </p>
 
-            <p className="mt-1 text-2xl font-bold">
+            <p className="mt-1 text-2xl font-extrabold tracking-tight text-slate-800">
               {rupiah(
                 availableBalance
               )}
             </p>
 
-            <p className="mt-2 text-xs text-slate-400">
-              Saldo yang dapat digunakan untuk setor tabungan.
+            <p className="mt-1 text-xs text-slate-400">
+              Saldo yang dapat digunakan untuk
+              setor tabungan
             </p>
-
           </div>
+        </div>
+      </div>
 
-          {/* FORM BUAT TABUNGAN */}
-          <div className="rounded-2xl bg-white p-5 shadow-sm">
+      <div className="mx-auto max-w-md px-5">
+        {/* Error global */}
+        {errorMessage && (
+          <div className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-600 ring-1 ring-red-100">
+            {errorMessage}
 
-            <h2 className="font-semibold text-slate-900">
-              Buat Tabungan
-            </h2>
-
-            <p className="mt-1 text-xs text-slate-500">
-              Buat tujuan tabungan terlebih dahulu.
-            </p>
-
-            <form
-              onSubmit={createSaving}
-              className="mt-4 space-y-4"
+            <button
+              type="button"
+              onClick={() =>
+                setErrorMessage("")
+              }
+              className="ml-2 font-extrabold"
             >
+              ×
+            </button>
+          </div>
+        )}
 
-              <div>
+        {/* Success */}
+        {successMessage && (
+          <div className="mt-4 flex items-center gap-3 rounded-2xl bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700 ring-1 ring-emerald-100">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-100">
+              ✓
+            </span>
 
-                <label className="mb-2 block text-sm font-semibold">
-                  Nama Tabungan
-                </label>
+            <span>
+              {successMessage}
+            </span>
+          </div>
+        )}
 
-                <input
-                  type="text"
-                  value={name}
-                  onChange={(e) =>
-                    setName(
-                      e.target.value
-                    )
-                  }
-                  placeholder="Contoh: Dana Darurat"
-                  className="w-full rounded-xl border-0 bg-slate-50 px-4 py-3 shadow-sm"
-                  required
-                />
+        {/* Section title */}
+        <div className="mt-6 flex items-end justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-blue-500">
+              Keuangan
+            </p>
 
-              </div>
-
-              <div>
-
-                <label className="mb-2 block text-sm font-semibold">
-                  Target Tabungan
-                </label>
-
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  value={targetAmount}
-                  onChange={(e) =>
-                    setTargetAmount(
-                      e.target.value.replace(
-                        /\D/g,
-                        ""
-                      )
-                    )
-                  }
-                  placeholder="Contoh: 10000000"
-                  className="w-full rounded-xl border-0 bg-slate-50 px-4 py-3 shadow-sm"
-                  required
-                />
-
-              </div>
-
-              <div>
-
-                <label className="mb-2 block text-sm font-semibold">
-                  Target Tanggal
-                </label>
-
-                <input
-                  type="date"
-                  value={targetDate}
-                  onChange={(e) =>
-                    setTargetDate(
-                      e.target.value
-                    )
-                  }
-                  className="w-full rounded-xl border-0 bg-slate-50 px-4 py-3 shadow-sm"
-                />
-
-              </div>
-
-              <div>
-
-                <label className="mb-2 block text-sm font-semibold">
-                  Keterangan
-                </label>
-
-                <textarea
-                  value={description}
-                  onChange={(e) =>
-                    setDescription(
-                      e.target.value
-                    )
-                  }
-                  placeholder="Contoh: Dana darurat 6 bulan"
-                  rows={3}
-                  className="w-full resize-none rounded-xl border-0 bg-slate-50 px-4 py-3 shadow-sm"
-                />
-
-              </div>
-
-              <div className="rounded-xl bg-blue-50 p-3 text-xs leading-5 text-blue-700">
-                Membuat tujuan tabungan belum mengurangi saldo. Saldo baru berkurang ketika kamu melakukan transaksi <strong>Setor</strong>.
-              </div>
-
-              {error && (
-                <div className="rounded-xl bg-red-50 p-3 text-sm text-red-600">
-                  {error}
-                </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={saving}
-                className="w-full rounded-xl bg-slate-900 px-4 py-3 font-semibold text-white disabled:opacity-50"
-              >
-                {saving
-                  ? "Menyimpan..."
-                  : "+ Buat Tabungan"}
-              </button>
-
-            </form>
-
+            <h2 className="mt-1 text-xl font-extrabold text-slate-800">
+              Target Tabungan
+            </h2>
           </div>
 
-          {/* DAFTAR TABUNGAN */}
-          <div className="rounded-2xl bg-white p-5 shadow-sm">
+          <button
+            type="button"
+            onClick={() => {
+              setErrorMessage("");
+              setShowCreateModal(true);
+            }}
+            className="rounded-2xl bg-slate-900 px-4 py-2.5 text-xs font-extrabold text-white shadow-md transition active:scale-95"
+          >
+            + Buat Target
+          </button>
+        </div>
 
-            <div className="flex items-center justify-between">
+        {/* Loading */}
+        {loading ? (
+          <div className="mt-5 rounded-3xl bg-white p-6 text-center shadow-sm ring-1 ring-slate-100">
+            <div className="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-blue-500" />
 
-              <div>
-
-                <h2 className="font-semibold text-slate-900">
-                  Tabungan Saya
-                </h2>
-
-                <p className="mt-1 text-xs text-slate-500">
-                  Tujuan tabungan yang sudah dibuat.
-                </p>
-
-              </div>
-
-              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-                {savings.length}
-              </span>
-
+            <p className="mt-3 text-sm text-slate-400">
+              Memuat tabungan...
+            </p>
+          </div>
+        ) : savings.length === 0 ? (
+          /* Empty state */
+          <div className="mt-5 rounded-3xl bg-white p-7 text-center shadow-sm ring-1 ring-slate-100">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-50 text-3xl">
+              🏦
             </div>
 
-            <div className="mt-4 space-y-4">
+            <h3 className="mt-4 text-base font-extrabold text-slate-800">
+              Belum ada target tabungan
+            </h3>
 
-              {loading ? (
+            <p className="mx-auto mt-2 max-w-xs text-sm leading-6 text-slate-400">
+              Buat target tabungan untuk mulai
+              merencanakan keuanganmu.
+            </p>
 
-                <div className="rounded-xl bg-slate-50 p-4 text-center">
-
-                  <p className="text-sm text-slate-500">
-                    Memuat data tabungan...
-                  </p>
-
-                </div>
-
-              ) : savings.length === 0 ? (
-
-                <div className="rounded-xl bg-slate-50 p-4 text-center">
-
-                  <p className="text-sm text-slate-500">
-                    Belum ada tabungan.
-                  </p>
-
-                  <p className="mt-1 text-xs text-slate-400">
-                    Buat tujuan tabungan menggunakan form di atas.
-                  </p>
-
-                </div>
-
-              ) : (
-
-                savings.map((item) => {
-
-                  const target =
-                    Number(
-                      item.target_amount
-                    );
-
-                  const current =
-                    Number(
-                      item.current_amount
-                    );
-
-                  const percentage =
-                    target > 0
-                      ? Math.min(
-                          (current /
-                            target) *
-                            100,
-                          100
-                        )
-                      : 0;
-
-                  const targetReached =
-                    current >= target;
-
-                  const targetExceeded =
-                    current > target;
-
-                  const remaining =
-                    Math.max(
-                      target -
-                        current,
+            <button
+              type="button"
+              onClick={() => {
+                setErrorMessage("");
+                setShowCreateModal(true);
+              }}
+              className="mt-5 rounded-2xl bg-blue-500 px-5 py-3 text-sm font-extrabold text-white shadow-md"
+            >
+              + Buat Target Tabungan
+            </button>
+          </div>
+        ) : (
+          <div className="mt-5 space-y-4">
+            {savings.map(
+              (savingItem) => {
+                const current =
+                  Number(
+                    savingItem.current_amount ||
                       0
-                    );
+                  );
 
-                  const exceededAmount =
-                    Math.max(
-                      current -
-                        target,
+                const target =
+                  Number(
+                    savingItem.target_amount ||
                       0
-                    );
+                  );
 
-                  return (
-                    <div
-                      key={item.id}
-                      className="rounded-2xl bg-slate-50 p-4"
-                    >
+                const progress =
+                  getProgress(
+                    savingItem
+                  );
 
+                const remaining =
+                  getRemaining(
+                    savingItem
+                  );
+
+                const overTarget =
+                  Math.max(
+                    0,
+                    current - target
+                  );
+
+                return (
+                  <div
+                    key={
+                      savingItem.id
+                    }
+                    className="overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-slate-100"
+                  >
+                    <div className="p-5">
+                      {/* Name + menu */}
                       <div className="flex items-start justify-between gap-3">
-
                         <div className="min-w-0">
-
-                          <h3 className="font-semibold text-slate-900">
-                            {item.name}
+                          <h3 className="truncate text-base font-extrabold text-slate-800">
+                            {
+                              savingItem.name
+                            }
                           </h3>
 
-                          {item.description && (
-                            <p className="mt-1 text-xs text-slate-500">
-                              {item.description}
+                          {savingItem.description && (
+                            <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-400">
+                              {
+                                savingItem.description
+                              }
                             </p>
                           )}
-
                         </div>
 
                         <button
                           type="button"
                           onClick={() =>
-                            deleteSaving(
-                              item.id,
-                              item.name,
-                              current
+                            handleDeleteSaving(
+                              savingItem
                             )
                           }
-                          className="shrink-0 text-xs font-semibold text-red-500"
+                          disabled={
+                            saving ||
+                            current > 0
+                          }
+                          className="shrink-0 rounded-xl bg-slate-50 px-3 py-2 text-xs font-bold text-slate-400 disabled:cursor-not-allowed disabled:opacity-40"
                         >
                           Hapus
                         </button>
-
                       </div>
 
-                      {/* NOMINAL */}
-                      <div className="mt-4 flex items-end justify-between">
-
+                      {/* Current / target */}
+                      <div className="mt-5 flex items-end justify-between gap-3">
                         <div>
-
-                          <p className="text-xs text-slate-500">
+                          <p className="text-xs font-semibold text-slate-400">
                             Terkumpul
                           </p>
 
-                          <p className="mt-1 text-lg font-bold text-slate-900">
+                          <p className="mt-1 text-xl font-extrabold text-slate-800">
                             {rupiah(
                               current
                             )}
                           </p>
-
                         </div>
 
                         <div className="text-right">
-
-                          <p className="text-xs text-slate-500">
+                          <p className="text-xs font-semibold text-slate-400">
                             Target
                           </p>
 
-                          <p className="mt-1 text-sm font-semibold text-slate-700">
+                          <p className="mt-1 text-sm font-bold text-slate-600">
                             {rupiah(
                               target
                             )}
                           </p>
-
                         </div>
-
                       </div>
 
-                      {/* STATUS TARGET */}
-                      {targetExceeded ? (
-
-                        <div className="mt-3 rounded-xl bg-green-50 p-3">
-
-                          <p className="text-sm font-bold text-green-700">
-                            🎉 Target tabungan terlampaui!
-                          </p>
-
-                          <p className="mt-1 text-xs text-green-600">
-                            Lebih{" "}
-                            {rupiah(
-                              exceededAmount
-                            )}{" "}
-                            dari target.
-                          </p>
-
+                      {/* Progress */}
+                      <div className="mt-4">
+                        <div className="h-2.5 overflow-hidden rounded-full bg-slate-100">
+                          <div
+                            className="h-full rounded-full bg-blue-500 transition-all"
+                            style={{
+                              width: `${progress}%`,
+                            }}
+                          />
                         </div>
 
-                      ) : targetReached ? (
+                        <div className="mt-2 flex justify-between text-[11px] font-semibold text-slate-400">
+                          <span>
+                            {progress}%
+                          </span>
 
-                        <div className="mt-3 rounded-xl bg-green-50 p-3">
-
-                          <p className="text-sm font-bold text-green-700">
-                            🎉 Target tabungan tercapai!
-                          </p>
-
-                          <p className="mt-1 text-xs text-green-600">
-                            Kamu sudah mencapai target tabungan.
-                          </p>
-
-                        </div>
-
-                      ) : (
-
-                        <div className="mt-3">
-
-                          <div className="h-2 overflow-hidden rounded-full bg-slate-200">
-
-                            <div
-                              className="h-full rounded-full bg-slate-900"
-                              style={{
-                                width: `${percentage}%`
-                              }}
-                            />
-
-                          </div>
-
-                          <div className="mt-2 flex justify-between text-xs">
-
-                            <span className="text-slate-500">
-                              {percentage.toFixed(
-                                0
-                              )}% tercapai
+                          {savingItem.target_date ? (
+                            <span>
+                              Target{" "}
+                              {dateIndonesia(
+                                savingItem.target_date
+                              )}
                             </span>
+                          ) : (
+                            <span>
+                              Tanpa batas waktu
+                            </span>
+                          )}
+                        </div>
+                      </div>
 
-                            <span className="font-semibold text-slate-700">
+                      {/* Status */}
+                      {current ===
+                        target &&
+                        target > 0 && (
+                          <div className="mt-4 rounded-2xl bg-emerald-50 px-4 py-3 text-xs font-bold text-emerald-700">
+                            🎉 Target tabungan
+                            tercapai!
+                          </div>
+                        )}
+
+                      {current >
+                        target &&
+                        target > 0 && (
+                          <div className="mt-4 rounded-2xl bg-emerald-50 px-4 py-3 text-xs font-bold text-emerald-700">
+                            🎉 Target tabungan
+                            terlampaui!
+                            <span className="ml-1 font-semibold">
+                              +
+                              {rupiah(
+                                overTarget
+                              )}
+                            </span>
+                          </div>
+                        )}
+
+                      {current <
+                        target && (
+                          <div className="mt-4 rounded-2xl bg-blue-50 px-4 py-3 text-xs font-semibold text-blue-700">
+                            Masih kurang{" "}
+                            <span className="font-extrabold">
                               {rupiah(
                                 remaining
-                              )}{" "}
-                              lagi
-                            </span>
-
+                              )}
+                            </span>{" "}
+                            untuk mencapai
+                            target.
                           </div>
+                        )}
 
-                        </div>
-
-                      )}
-
-                      {/* PROGRESS BAR UNTUK TARGET TERCAPAI */}
-                      {targetReached && (
-                        <div className="mt-3">
-
-                          <div className="h-2 overflow-hidden rounded-full bg-slate-200">
-
-                            <div
-                              className="h-full rounded-full bg-green-600"
-                              style={{
-                                width: "100%"
-                              }}
-                            />
-
-                          </div>
-
-                          <p className="mt-2 text-right text-xs font-semibold text-green-600">
-                            100% target
-                          </p>
-
-                        </div>
-                      )}
-
-                      {item.target_date && (
-                        <p className="mt-3 text-xs text-slate-500">
-                          Target:{" "}
-                          {formatDate(
-                            item.target_date
-                          )}
-                        </p>
-                      )}
-
-                      {/* TOMBOL SETOR / AMBIL */}
-                      <div className="mt-4 grid grid-cols-2 gap-2">
-
+                      {/* Action buttons */}
+                      <div className="mt-5 grid grid-cols-2 gap-3">
                         <button
                           type="button"
                           onClick={() =>
-                            openAction(
-                              item,
+                            openActionModal(
+                              savingItem,
                               "SETOR"
                             )
                           }
-                          className="rounded-xl bg-slate-900 px-3 py-3 text-sm font-semibold text-white"
+                          className="rounded-2xl bg-blue-500 px-4 py-3.5 text-sm font-extrabold text-white shadow-sm transition active:scale-[0.98]"
                         >
                           + Setor
                         </button>
@@ -1000,177 +970,374 @@ export default function SavingsPage() {
                         <button
                           type="button"
                           onClick={() =>
-                            openAction(
-                              item,
+                            openActionModal(
+                              savingItem,
                               "AMBIL"
                             )
                           }
-                          disabled={
-                            current <= 0
-                          }
-                          className="rounded-xl bg-white px-3 py-3 text-sm font-semibold text-slate-900 shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
+                          className="rounded-2xl bg-slate-100 px-4 py-3.5 text-sm font-extrabold text-slate-700 transition active:scale-[0.98]"
                         >
                           − Ambil
                         </button>
-
                       </div>
-
                     </div>
-                  );
-
-                })
-
-              )}
-
-            </div>
-
+                  </div>
+                );
+              }
+            )}
           </div>
-
-        </section>
-
+        )}
       </div>
 
-      {/* MODAL SETOR / AMBIL */}
-      {actionSaving && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 px-4 pb-4">
+      {/* Bottom navigation */}
+      <nav className="fixed bottom-0 left-0 right-0 z-30 border-t border-slate-200 bg-white/95 backdrop-blur">
+        <div className="mx-auto grid max-w-md grid-cols-3 px-4 py-2">
+          <button
+            type="button"
+            onClick={() =>
+              router.push("/dashboard")
+            }
+            className="flex flex-col items-center gap-1 rounded-2xl py-2 text-slate-400"
+          >
+            <span className="text-xl">
+              ⌂
+            </span>
 
-          <div className="w-full max-w-md rounded-3xl bg-white p-5 shadow-xl">
+            <span className="text-[10px] font-bold">
+              Beranda
+            </span>
+          </button>
 
-            <div className="flex items-start justify-between">
+          <button
+            type="button"
+            onClick={() =>
+              router.push(
+                "/transactions"
+              )
+            }
+            className="flex flex-col items-center gap-1 rounded-2xl py-2 text-slate-400"
+          >
+            <span className="text-xl">
+              ≡
+            </span>
 
+            <span className="text-[10px] font-bold">
+              Transaksi
+            </span>
+          </button>
+
+          <button
+            type="button"
+            className="flex flex-col items-center gap-1 rounded-2xl py-2 text-blue-500"
+          >
+            <span className="text-xl">
+              ▣
+            </span>
+
+            <span className="text-[10px] font-extrabold">
+              Tabungan
+            </span>
+          </button>
+        </div>
+      </nav>
+
+      {/* Modal buat target */}
+      {showCreateModal && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40 px-4 pb-0 backdrop-blur-sm sm:items-center sm:pb-4">
+          <div className="w-full max-w-md rounded-t-[2rem] bg-white p-5 shadow-2xl sm:rounded-[2rem]">
+            <div className="mx-auto mb-5 h-1.5 w-12 rounded-full bg-slate-200 sm:hidden" />
+
+            <div className="flex items-center justify-between">
               <div>
-
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                  {actionType ===
-                  "SETOR"
-                    ? "Setor Tabungan"
-                    : "Ambil Tabungan"}
+                <p className="text-xs font-semibold text-blue-500">
+                  Tabungan
                 </p>
 
-                <h2 className="mt-1 text-xl font-bold text-slate-900">
-                  {actionSaving.name}
+                <h2 className="mt-1 text-xl font-extrabold text-slate-800">
+                  Buat Target
                 </h2>
-
               </div>
 
               <button
                 type="button"
-                onClick={() => {
-                  setActionSaving(
-                    null
-                  );
-                  setActionAmount("");
-                  setActionError("");
-                }}
-                className="text-xl text-slate-400"
+                onClick={
+                  closeCreateModal
+                }
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-lg text-slate-500"
               >
                 ×
               </button>
-
-            </div>
-
-            <div className="mt-4 rounded-xl bg-slate-50 p-4">
-
-              <div className="flex justify-between text-sm">
-
-                <span className="text-slate-500">
-                  Saldo tabungan
-                </span>
-
-                <span className="font-semibold text-slate-900">
-                  {rupiah(
-                    Number(
-                      actionSaving.current_amount
-                    )
-                  )}
-                </span>
-
-              </div>
-
-              {actionType ===
-                "SETOR" && (
-                <div className="mt-2 flex justify-between text-sm">
-
-                  <span className="text-slate-500">
-                    Saldo tersedia
-                  </span>
-
-                  <span className="font-semibold text-slate-900">
-                    {rupiah(
-                      availableBalance
-                    )}
-                  </span>
-
-                </div>
-              )}
-
             </div>
 
             <form
               onSubmit={
-                handleSavingAction
+                handleCreateSaving
               }
-              className="mt-4 space-y-4"
+              className="mt-5 space-y-4"
             >
-
               <div>
-
-                <label className="mb-2 block text-sm font-semibold">
-                  Nominal{" "}
-                  {actionType ===
-                  "SETOR"
-                    ? "Setor"
-                    : "Ambil"}
+                <label className="mb-2 block text-sm font-bold text-slate-700">
+                  Nama Tabungan
                 </label>
 
                 <input
                   type="text"
-                  inputMode="numeric"
-                  autoFocus
-                  value={actionAmount}
-                  onChange={(e) =>
-                    setActionAmount(
-                      e.target.value.replace(
-                        /\D/g,
-                        ""
-                      )
+                  value={name}
+                  onChange={(event) =>
+                    setName(
+                      event.target.value
                     )
                   }
-                  placeholder="Contoh: 100000"
-                  className="w-full rounded-xl border-0 bg-slate-50 px-4 py-3 text-lg font-semibold shadow-sm"
-                  required
+                  placeholder="Contoh: Dana Liburan"
+                  className="w-full rounded-2xl border-0 bg-slate-50 px-4 py-3.5 text-sm text-slate-700 outline-none ring-1 ring-slate-200 focus:ring-2 focus:ring-blue-400"
                 />
-
               </div>
 
-              {actionError && (
-                <div className="rounded-xl bg-red-50 p-3 text-sm text-red-600">
-                  ⚠️ {actionError}
+              <div>
+                <label className="mb-2 block text-sm font-bold text-slate-700">
+                  Target Nominal
+                </label>
+
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-400">
+                    Rp
+                  </span>
+
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={
+                      targetAmount
+                    }
+                    onChange={(
+                      event
+                    ) =>
+                      setTargetAmount(
+                        formatAmountInput(
+                          event
+                            .target
+                            .value
+                        )
+                      )
+                    }
+                    placeholder="0"
+                    className="w-full rounded-2xl border-0 bg-slate-50 py-3.5 pl-12 pr-4 text-sm font-bold text-slate-700 outline-none ring-1 ring-slate-200 focus:ring-2 focus:ring-blue-400"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-bold text-slate-700">
+                  Target Tanggal
+                  <span className="ml-1 font-normal text-slate-400">
+                    (opsional)
+                  </span>
+                </label>
+
+                <input
+                  type="date"
+                  value={
+                    targetDate
+                  }
+                  onChange={(event) =>
+                    setTargetDate(
+                      event.target.value
+                    )
+                  }
+                  className="w-full rounded-2xl border-0 bg-slate-50 px-4 py-3.5 text-sm text-slate-700 outline-none ring-1 ring-slate-200 focus:ring-2 focus:ring-blue-400"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-bold text-slate-700">
+                  Keterangan
+                  <span className="ml-1 font-normal text-slate-400">
+                    (opsional)
+                  </span>
+                </label>
+
+                <textarea
+                  value={
+                    description
+                  }
+                  onChange={(event) =>
+                    setDescription(
+                      event.target.value
+                    )
+                  }
+                  rows={3}
+                  placeholder="Contoh: Tabungan untuk liburan akhir tahun"
+                  className="w-full resize-none rounded-2xl border-0 bg-slate-50 px-4 py-3.5 text-sm text-slate-700 outline-none ring-1 ring-slate-200 focus:ring-2 focus:ring-blue-400"
+                />
+              </div>
+
+              {errorMessage && (
+                <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-600">
+                  {errorMessage}
                 </div>
               )}
 
               <button
                 type="submit"
-                disabled={
-                  actionLoading
-                }
-                className="w-full rounded-xl bg-slate-900 px-4 py-3 font-semibold text-white disabled:opacity-50"
+                disabled={saving}
+                className="w-full rounded-2xl bg-slate-900 px-5 py-4 text-sm font-extrabold text-white shadow-lg disabled:opacity-60"
               >
-                {actionLoading
-                  ? "Memproses..."
-                  : actionType ===
-                    "SETOR"
-                  ? "Konfirmasi Setor"
-                  : "Konfirmasi Ambil"}
+                {saving
+                  ? "Menyimpan..."
+                  : "Buat Target Tabungan"}
               </button>
-
             </form>
-
           </div>
-
         </div>
       )}
 
+      {/* Modal setor / ambil */}
+      {showActionModal &&
+        selectedSaving && (
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40 px-4 pb-0 backdrop-blur-sm sm:items-center sm:pb-4">
+            <div className="w-full max-w-md rounded-t-[2rem] bg-white p-5 shadow-2xl sm:rounded-[2rem]">
+              <div className="mx-auto mb-5 h-1.5 w-12 rounded-full bg-slate-200 sm:hidden" />
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <p
+                    className={`text-xs font-semibold ${
+                      actionType ===
+                      "SETOR"
+                        ? "text-blue-500"
+                        : "text-slate-500"
+                    }`}
+                  >
+                    {actionType ===
+                    "SETOR"
+                      ? "Tambah Saldo"
+                      : "Gunakan Saldo"}
+                  </p>
+
+                  <h2 className="mt-1 text-xl font-extrabold text-slate-800">
+                    {actionType ===
+                    "SETOR"
+                      ? "Setor Tabungan"
+                      : "Ambil Tabungan"}
+                  </h2>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={
+                    closeActionModal
+                  }
+                  className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-lg text-slate-500"
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className="mt-5 rounded-2xl bg-slate-50 p-4">
+                <p className="text-xs font-semibold text-slate-400">
+                  {selectedSaving.name}
+                </p>
+
+                <div className="mt-2 flex items-end justify-between">
+                  <div>
+                    <p className="text-[11px] font-semibold text-slate-400">
+                      Saldo Tabungan
+                    </p>
+
+                    <p className="text-lg font-extrabold text-slate-800">
+                      {rupiah(
+                        Number(
+                          selectedSaving.current_amount ||
+                            0
+                        )
+                      )}
+                    </p>
+                  </div>
+
+                  {actionType ===
+                    "SETOR" && (
+                    <div className="text-right">
+                      <p className="text-[11px] font-semibold text-slate-400">
+                        Saldo Tersedia
+                      </p>
+
+                      <p className="text-sm font-bold text-blue-600">
+                        {rupiah(
+                          availableBalance
+                        )}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <form
+                onSubmit={
+                  handleAction
+                }
+                className="mt-5 space-y-4"
+              >
+                <div>
+                  <label className="mb-2 block text-sm font-bold text-slate-700">
+                    Nominal
+                  </label>
+
+                  <div className="relative">
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-400">
+                      Rp
+                    </span>
+
+                    <input
+                      autoFocus
+                      type="text"
+                      inputMode="numeric"
+                      value={
+                        actionAmount
+                      }
+                      onChange={(
+                        event
+                      ) =>
+                        setActionAmount(
+                          formatAmountInput(
+                            event
+                              .target
+                              .value
+                          )
+                        )
+                      }
+                      placeholder="0"
+                      className="w-full rounded-2xl border-0 bg-slate-50 py-4 pl-12 pr-4 text-lg font-extrabold text-slate-800 outline-none ring-1 ring-slate-200 focus:ring-2 focus:ring-blue-400"
+                    />
+                  </div>
+                </div>
+
+                {errorMessage && (
+                  <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-600">
+                    {errorMessage}
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className={`w-full rounded-2xl px-5 py-4 text-sm font-extrabold text-white shadow-lg disabled:opacity-60 ${
+                    actionType ===
+                    "SETOR"
+                      ? "bg-blue-500"
+                      : "bg-slate-900"
+                  }`}
+                >
+                  {saving
+                    ? "Memproses..."
+                    : actionType ===
+                        "SETOR"
+                      ? "Simpan Setoran"
+                      : "Simpan Pengambilan"}
+                </button>
+              </form>
+            </div>
+          </div>
+        )}
     </main>
   );
 }
