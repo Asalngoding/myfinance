@@ -77,6 +77,9 @@ export default function SavingsPage() {
   const [actionLoading, setActionLoading] =
     useState(false);
 
+  const [actionError, setActionError] =
+    useState("");
+
   const [availableBalance, setAvailableBalance] =
     useState(0);
 
@@ -294,7 +297,7 @@ export default function SavingsPage() {
       return;
     }
 
-    setError("");
+    setActionError("");
 
     const numericAmount =
       Number(
@@ -305,7 +308,7 @@ export default function SavingsPage() {
       !numericAmount ||
       numericAmount <= 0
     ) {
-      setError(
+      setActionError(
         "Nominal harus lebih dari 0."
       );
       return;
@@ -316,22 +319,36 @@ export default function SavingsPage() {
         actionSaving.current_amount
       );
 
+    /*
+     * SETOR:
+     * Tidak boleh melebihi saldo tersedia.
+     */
     if (
       actionType === "SETOR" &&
       numericAmount > availableBalance
     ) {
-      setError(
-        "Nominal setor melebihi saldo tersedia."
+      setActionError(
+        `Saldo tidak mencukupi. Saldo tersedia ${rupiah(
+          availableBalance
+        )}. Maksimal setor ${rupiah(
+          availableBalance
+        )}.`
       );
       return;
     }
 
+    /*
+     * AMBIL:
+     * Tidak boleh melebihi saldo tabungan.
+     */
     if (
       actionType === "AMBIL" &&
       numericAmount > currentAmount
     ) {
-      setError(
-        "Nominal ambil melebihi saldo tabungan."
+      setActionError(
+        `Saldo tabungan tidak mencukupi. Saldo tabungan saat ini ${rupiah(
+          currentAmount
+        )}.`
       );
       return;
     }
@@ -345,6 +362,9 @@ export default function SavingsPage() {
         : currentAmount -
           numericAmount;
 
+    /*
+     * Simpan saldo tabungan baru.
+     */
     const {
       error: updateError
     } = await supabase
@@ -359,7 +379,7 @@ export default function SavingsPage() {
       );
 
     if (updateError) {
-      setError(
+      setActionError(
         "Saldo tabungan gagal diperbarui: " +
           updateError.message
       );
@@ -367,11 +387,6 @@ export default function SavingsPage() {
       setActionLoading(false);
       return;
     }
-
-    const transactionCategory =
-      actionType === "SETOR"
-        ? "TABUNGAN_MASUK"
-        : "TABUNGAN_KELUAR";
 
     const {
       data: { user }
@@ -393,6 +408,14 @@ export default function SavingsPage() {
       return;
     }
 
+    const transactionCategory =
+      actionType === "SETOR"
+        ? "TABUNGAN_MASUK"
+        : "TABUNGAN_KELUAR";
+
+    /*
+     * Catat transaksi.
+     */
     const {
       error: transactionError
     } = await supabase
@@ -418,6 +441,11 @@ export default function SavingsPage() {
           actionSaving.id
       });
 
+    /*
+     * Jika transaksi gagal,
+     * kembalikan saldo tabungan
+     * ke kondisi sebelumnya.
+     */
     if (transactionError) {
       await supabase
         .from("savings")
@@ -430,7 +458,7 @@ export default function SavingsPage() {
           actionSaving.id
         );
 
-      setError(
+      setActionError(
         "Transaksi gagal disimpan: " +
           transactionError.message
       );
@@ -441,6 +469,7 @@ export default function SavingsPage() {
 
     setActionAmount("");
     setActionSaving(null);
+    setActionError("");
 
     await loadData();
 
@@ -454,9 +483,13 @@ export default function SavingsPage() {
     savingName: string,
     currentAmount: number
   ) {
+    /*
+     * Tabungan dengan saldo tidak boleh
+     * langsung dihapus.
+     */
     if (currentAmount > 0) {
       setError(
-        "Tabungan yang masih memiliki saldo tidak dapat dihapus. Ambil seluruh saldo terlebih dahulu."
+        "Tabungan masih memiliki saldo. Ambil seluruh saldo terlebih dahulu sebelum menghapus."
       );
       return;
     }
@@ -502,6 +535,7 @@ export default function SavingsPage() {
     type: ActionType
   ) {
     setError("");
+    setActionError("");
     setActionSaving(item);
     setActionType(type);
     setActionAmount("");
@@ -663,7 +697,7 @@ export default function SavingsPage() {
                 Membuat tujuan tabungan belum mengurangi saldo. Saldo baru berkurang ketika kamu melakukan transaksi <strong>Setor</strong>.
               </div>
 
-              {error && !actionSaving && (
+              {error && (
                 <div className="rounded-xl bg-red-50 p-3 text-sm text-red-600">
                   {error}
                 </div>
@@ -756,6 +790,26 @@ export default function SavingsPage() {
                         )
                       : 0;
 
+                  const targetReached =
+                    current >= target;
+
+                  const targetExceeded =
+                    current > target;
+
+                  const remaining =
+                    Math.max(
+                      target -
+                        current,
+                      0
+                    );
+
+                  const exceededAmount =
+                    Math.max(
+                      current -
+                        target,
+                      0
+                    );
+
                   return (
                     <div
                       key={item.id}
@@ -794,6 +848,7 @@ export default function SavingsPage() {
 
                       </div>
 
+                      {/* NOMINAL */}
                       <div className="mt-4 flex items-end justify-between">
 
                         <div>
@@ -826,41 +881,96 @@ export default function SavingsPage() {
 
                       </div>
 
-                      <div className="mt-3">
+                      {/* STATUS TARGET */}
+                      {targetExceeded ? (
 
-                        <div className="h-2 overflow-hidden rounded-full bg-slate-200">
+                        <div className="mt-3 rounded-xl bg-green-50 p-3">
 
-                          <div
-                            className="h-full rounded-full bg-slate-900"
-                            style={{
-                              width: `${percentage}%`
-                            }}
-                          />
+                          <p className="text-sm font-bold text-green-700">
+                            🎉 Target tabungan terlampaui!
+                          </p>
 
-                        </div>
-
-                        <div className="mt-2 flex justify-between text-xs">
-
-                          <span className="text-slate-500">
-                            {percentage.toFixed(
-                              0
-                            )}% tercapai
-                          </span>
-
-                          <span className="font-semibold text-slate-700">
+                          <p className="mt-1 text-xs text-green-600">
+                            Lebih{" "}
                             {rupiah(
-                              Math.max(
-                                target -
-                                  current,
-                                0
-                              )
+                              exceededAmount
                             )}{" "}
-                            lagi
-                          </span>
+                            dari target.
+                          </p>
 
                         </div>
 
-                      </div>
+                      ) : targetReached ? (
+
+                        <div className="mt-3 rounded-xl bg-green-50 p-3">
+
+                          <p className="text-sm font-bold text-green-700">
+                            🎉 Target tabungan tercapai!
+                          </p>
+
+                          <p className="mt-1 text-xs text-green-600">
+                            Kamu sudah mencapai target tabungan.
+                          </p>
+
+                        </div>
+
+                      ) : (
+
+                        <div className="mt-3">
+
+                          <div className="h-2 overflow-hidden rounded-full bg-slate-200">
+
+                            <div
+                              className="h-full rounded-full bg-slate-900"
+                              style={{
+                                width: `${percentage}%`
+                              }}
+                            />
+
+                          </div>
+
+                          <div className="mt-2 flex justify-between text-xs">
+
+                            <span className="text-slate-500">
+                              {percentage.toFixed(
+                                0
+                              )}% tercapai
+                            </span>
+
+                            <span className="font-semibold text-slate-700">
+                              {rupiah(
+                                remaining
+                              )}{" "}
+                              lagi
+                            </span>
+
+                          </div>
+
+                        </div>
+
+                      )}
+
+                      {/* PROGRESS BAR UNTUK TARGET TERCAPAI */}
+                      {targetReached && (
+                        <div className="mt-3">
+
+                          <div className="h-2 overflow-hidden rounded-full bg-slate-200">
+
+                            <div
+                              className="h-full rounded-full bg-green-600"
+                              style={{
+                                width: "100%"
+                              }}
+                            />
+
+                          </div>
+
+                          <p className="mt-2 text-right text-xs font-semibold text-green-600">
+                            100% target
+                          </p>
+
+                        </div>
+                      )}
 
                       {item.target_date && (
                         <p className="mt-3 text-xs text-slate-500">
@@ -950,7 +1060,7 @@ export default function SavingsPage() {
                     null
                   );
                   setActionAmount("");
-                  setError("");
+                  setActionError("");
                 }}
                 className="text-xl text-slate-400"
               >
@@ -1033,9 +1143,9 @@ export default function SavingsPage() {
 
               </div>
 
-              {error && (
+              {actionError && (
                 <div className="rounded-xl bg-red-50 p-3 text-sm text-red-600">
-                  {error}
+                  ⚠️ {actionError}
                 </div>
               )}
 
