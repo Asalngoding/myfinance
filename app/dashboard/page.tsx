@@ -156,23 +156,6 @@ export default async function DashboardPage() {
         {/* HEADER */}
         <header className="px-5 pb-5 pt-5 text-white">
 
-          {/* Fake status bar */}
-          <div className="relative mb-5 flex items-center justify-between px-1 text-sm font-semibold">
-            <span>
-              {new Intl.DateTimeFormat("id-ID", {
-                hour: "2-digit",
-                minute: "2-digit",
-                hour12: false
-              }).format(now)}
-            </span>
-
-            <div className="absolute left-1/2 top-0 h-7 w-28 -translate-x-1/2 rounded-full bg-black" />
-
-            <span className="text-xs">
-              ▮▮▮ 90%
-            </span>
-          </div>
-
           {/* PROFILE */}
           <div className="flex items-center justify-between">
 
